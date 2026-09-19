@@ -19,27 +19,23 @@ jobs:
         run: sudo apt-get update -qq && sudo apt-get install -y lua5.1
       - name: Lua 5.1 syntax validation
         run: find EbonTomeFarm tests -name '*.lua' -print0 | xargs -0 -n1 luac5.1 -p
-      - name: Run addon regression tests
+      - name: Run 40 addon regression tests
         run: lua5.1 tests/test.lua
+      - name: Run distribution and data-parser tests
+        run: python3 -m unittest discover -s tests -p 'test_*.py' -v
+      - name: Package and verify standalone install
+        run: |
+          python3 tools/package.py
+          cd dist && sha256sum -c SHA256SUMS.txt
       - name: Preserve an exact source checkpoint
         if: always()
         run: |
-          mkdir -p /tmp/ebontomefarm-artifacts
-          git archive --format=zip HEAD -o /tmp/ebontomefarm-artifacts/ebontomefarm-source.zip
-          git rev-parse HEAD > /tmp/ebontomefarm-artifacts/COMMIT.txt
-      - name: Package installable addon
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          from zipfile import ZipFile, ZIP_DEFLATED
-          with ZipFile('/tmp/ebontomefarm-artifacts/EbonTomeFarm.zip', 'w', ZIP_DEFLATED) as z:
-              for p in sorted(Path('EbonTomeFarm').rglob('*')):
-                  if p.is_file():
-                      z.write(p, p.as_posix())
-          PY
+          mkdir -p dist
+          git archive --format=zip HEAD -o dist/ebontomefarm-source.zip
+          git rev-parse HEAD > dist/COMMIT.txt
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: EbonTomeFarm-build-${{ github.sha }}
-          path: /tmp/ebontomefarm-artifacts/*
+          path: dist/*
           retention-days: 30

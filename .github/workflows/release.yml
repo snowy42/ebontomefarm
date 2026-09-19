@@ -1,0 +1,64 @@
+name: Publish installable release
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['release.json']
+permissions:
+  contents: write
+concurrency:
+  group: addon-release
+  cancel-in-progress: false
+jobs:
+  release:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install original-client Lua
+        run: sudo apt-get update -qq && sudo apt-get install -y lua5.1
+      - name: Compile and test before publishing
+        run: |
+          find EbonTomeFarm tests -name '*.lua' -print0 | xargs -0 -n1 luac5.1 -p
+          lua5.1 tests/test.lua
+          python3 -m unittest discover -s tests -p 'test_*.py' -v
+      - name: Validate release metadata and build install archive
+        id: version
+        run: |
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          from tools.package import validate, package
+          release = json.loads(Path('release.json').read_text())
+          version, files = validate(Path('.'))
+          assert release['version'] == version, 'Release/Core/TOC version mismatch'
+          assert isinstance(release['prerelease'], bool), 'prerelease must be boolean'
+          package()
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write('version=' + version + '\n')
+              output.write('prerelease=' + str(release['prerelease']).lower() + '\n')
+          PY
+          cd dist && sha256sum -c SHA256SUMS.txt
+      - name: Publish immutable versioned assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+          PRERELEASE: ${{ steps.version.outputs.prerelease }}
+        run: |
+          tag="v$VERSION"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo 'Release already exists; bump the version rather than replacing assets.'
+            exit 1
+          fi
+          flags=()
+          if [ "$PRERELEASE" = true ]; then flags+=(--prerelease); fi
+          gh release create "$tag" "dist/EbonTomeFarm-$VERSION.zip" dist/manifest.json dist/SHA256SUMS.txt \
+            --target "$GITHUB_SHA" --title "EbonTomeFarm $VERSION" \
+            --notes-file docs/RELEASE_NOTES.md "${flags[@]}"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: EbonTomeFarm-release-${{ github.sha }}
+          path: dist/*
+          retention-days: 30

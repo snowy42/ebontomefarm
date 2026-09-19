@@ -51,7 +51,8 @@ class DistributionTests(unittest.TestCase):
             pack.validate(self.root)
     def test_version_mismatch_is_rejected(self):
         toc = self.root / 'EbonTomeFarm' / 'EbonTomeFarm.toc'
-        toc.write_text(toc.read_text().replace('Version: 1.0.0', 'Version: 9.9.9'))
+        current, _ = pack.validate(self.root)
+        toc.write_text(toc.read_text().replace('Version: ' + current, 'Version: 9.9.9'))
         with self.assertRaises(ValueError):
             pack.validate(self.root)
     def test_licence_must_ship_with_standalone_addon_folder(self):
