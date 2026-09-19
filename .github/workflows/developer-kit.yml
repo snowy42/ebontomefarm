@@ -1,0 +1,27 @@
+name: Prepare offline developer kit
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/developer-kit.yml']
+permissions:
+  contents: read
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch pinned factual data
+        run: python3 tools/fetch_data.py
+      - name: Fetch original Lua 5.1.5 source and verify checksum
+        run: |
+          mkdir -p developer-kit
+          curl --fail --location --retry 3 https://www.lua.org/ftp/lua-5.1.5.tar.gz -o developer-kit/lua-5.1.5.tar.gz
+          echo '2640fc56a795f29d28ef15e13c34a47e223960b0240e8cb0a82d9b0738695333  developer-kit/lua-5.1.5.tar.gz' | sha256sum -c -
+          mv data-source developer-kit/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: EbonTomeFarm-offline-developer-kit
+          path: developer-kit/
+          retention-days: 7
