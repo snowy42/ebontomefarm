@@ -1,4 +1,4 @@
-EbonTomeFarm 1.0.1 - Project Ebonhold tome farming
+EbonTomeFarm 1.0.2 - Project Ebonhold tome farming
 ================================================
 Target: original WoW 3.3.5a / Interface 30300 / Lua 5.1.
 
@@ -33,6 +33,22 @@ manual overrides; right-click a row or use Auto detect to clear an override.
 Run-only echoes never count as permanent unlocks. Builds are account-wide;
 manual marks, personal pins and display settings are character-specific.
 
+RESET / ROUTING / NOTIFICATIONS (1.0.2)
+Reset build is at the bottom of the tracker and in Settings (/etf reset).
+It clears this build's manual ticks and skips, rescans learned echoes and
+bags, and pauses for review. Imported builds, real unlocks, personal pins,
+filters and unrelated marks are kept. Click Start route when ready.
+Replan keeps manual ticks, restores skips and starts at the nearest farm.
+It finishes one zone before choosing the next nearest zone, and stays on
+the same continent while it has stops. Close the map for a fresh position;
+without one it waits instead of guessing. No cross-continent distance is
+invented. Right-click one row in All echoes to undo just its manual tick.
+A new bag tome displays TOME FOUND, its name, and an optional sound. Bags
+are checked every second and after bag/loot events. Login bags are silent;
+each family is announced once per login session. Finds queue individually,
+even with the tracker hidden. Settings has switches and Test notification.
+The banner detects a bag item, not permanent learning. Use the tome normally.
+
 IMPORTANT LIMITS
 128 tome families and 173 community source records are bundled. 96 tome
 families have at least one native pin; 32 have no reliable fixed pin. These
@@ -50,7 +66,9 @@ COMMANDS
 /etf start          Start the farm route
 /etf pause          Pause navigation
 /etf skip           Defer the current stop
-/etf replan         Restore deferred stops and recalculate
+/etf replan         Restore skips and start nearest-first from here
+/etf reset          Confirm reset of this build
+/etf testalert      Preview the tome-found banner
 /etf scan           Rescan permanent collection and bags
 /etf settings       Preferences
 /etf resetpos       Recover the tracker/arrow positions

@@ -2,7 +2,7 @@
 ## Title: |cffd6b36aEbonTomeFarm|r
 ## Notes: Turn EbonholdHub echo builds into a tome-farming checklist and route.
 ## Author: Matthew Snow
-## Version: 1.0.1
+## Version: 1.0.2
 ## SavedVariables: EbonTomeFarmDB
 ## SavedVariablesPerCharacter: EbonTomeFarmCharDB
 ## OptionalDeps: ProjectEbonhold, EbonholdHub, TomTom

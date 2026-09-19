@@ -21,14 +21,15 @@ function A:InitMaps()
 end
 function A:SamplePosition()
     -- Never switch the map while a player is inspecting it. Keep the last safe sample.
-    if WorldMapFrame and WorldMapFrame:IsShown() then return false end
     if IsInInstance then local inside=IsInInstance();if inside then self.runtime.position=nil;return false end end
+    if WorldMapFrame and WorldMapFrame:IsShown() then return false end
     if not (SetMapToCurrentZone and GetCurrentMapAreaID and GetPlayerMapPosition) then return false end
     SetMapToCurrentZone()
     local mid=GetCurrentMapAreaID();local x,y=GetPlayerMapPosition("player")
     local zone=self.Data.zones[mid]
     if zone and type(x)=="number" and type(y)=="number" and x>0 and x<1 and y>0 and y<1 then
-        self.runtime.position={mapID=mid,x=x,y=y,c=zone.c};return true
+        self.runtime.position={mapID=mid,x=x,y=y,c=zone.c}
+        self.runtime.lastOutdoorPosition=self.runtime.position;return true
     end
     self.runtime.position=nil;return false
 end

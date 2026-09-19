@@ -7,7 +7,7 @@ so another chat can resume without any temporary files.
 
 ## What is built
 
-Version **1.0.1**, targeting original WoW **3.3.5a / Interface 30300 / Lua 5.1**.
+Version **1.0.2**, targeting original WoW **3.3.5a / Interface 30300 / Lua 5.1**.
 The addon implements all five requested feature areas: Hub build import,
 wanted-echo to tome-source matching, grouped farming itinerary and navigation,
 permanent collection checklist with clickable map/mob/boss details, and a
@@ -15,7 +15,7 @@ compact movable/hideable/scrollable UI. It includes native pins, a built-in
 direction card, optional legacy TomTom, source cycling, search, filtering,
 manual overrides, personal recorded locations, and account-wide saved builds.
 
-**48 Lua addon/mock tests and 8 Python distribution/parser tests pass locally.**
+**73 Lua addon/mock tests and 8 Python distribution/parser tests pass locally.**
 The data builder reproduced the committed Data.lua byte-for-byte from pinned
 inputs. GitHub Actions runs tests and packages exact source/install artifacts.
 `tools/package.py` makes a deterministic 13-file install ZIP with a per-file
@@ -25,7 +25,9 @@ Releases to confirm the latest publication result.
 
 Matthew supplied an in-game 1.0.0 screenshot confirming initial load, imported
 build display and active navigation. He found the guide omitted tome names.
-Version 1.0.1 fixes that. This patch has not yet been tested in his client;
+Version 1.0.1 fixes that. Further live feedback requested reset, nearest-zone
+routing and found-tome banners; 1.0.2 implements them. This patch has not yet
+been tested in his client;
 releases remain prereleases until `docs/TESTING.md` is exercised in game.
 Do not claim all integrations or community drops are confirmed. There is no
 unfinished core feature stub; remaining acceptance work is actual-client and
@@ -68,7 +70,7 @@ Research artifacts expire and are NOT required by the addon or normal tests.
 - UI.lua: original slate/gold widgets, tracker, dialogs and settings.
 - Events.lua: load/events, debounced scans, navigation updates and /etf commands.
 - tests/wow_mock.lua: deliberately restricted original-client mock.
-- tests/test.lua: 48 addon tests. tests/test_tools.py: 8 build/parser tests.
+- tests/test.lua: 73 addon tests. tests/test_tools.py: 8 build/parser tests.
 - tools/build_data.py / fetch_data.py: pinned literal-data generation.
 - tools/package.py: TOC/licence validation, reproducible ZIP and checksums.
 
@@ -141,7 +143,8 @@ Two upstream contradictions put Instructor Razuvious / Patchwerk under Ulduar.
 Native NPC data places them in Naxxramas. Follow the Naxxramas exterior
 entrance but retain a warning that the tome-drop association needs confirmation.
 
-Routing is greedy coverage/priority/proximity, not a terrain-aware optimum or
+Routing in 1.0.2 is nearest-first, finishing one native map zone at a time,
+not weighted coverage/priority. It is not a terrain-aware optimum or
 flight-path/portal planner. Keep the active farm until its targets are
 obtained. Arrival never completes it. Skip defers; Replan restores. Filters
 never delete wanted targets. Cross-continent travel remains the player's job.
@@ -182,3 +185,53 @@ saved-variable schema change, no data-source changes, and no new dependencies.
 Updating the addon folder preserves builds and collection. Added eight
 regressions: 48 Lua tests plus the unchanged eight Python tests now pass.
 The existing TomTom title is unchanged; this patch addresses ETF's own guide.
+
+## 1.0.2: reset, nearest-zone routes and bag alerts
+
+Matthew reported ticking everything left no obvious reset and Replan sometimes
+picked ICC/Crystalsong over nearby Blackrock sources. Old Replan never cleared
+manual overrides. The old weighted coverage/distance scorer could favour a
+large raid; it could also choose while runtime.position was nil, then hold that
+stop. The 1.0.1 label patch itself did not change routing.
+
+`ResetBuild(expectedID)` clears only this build's manual keys (before and after
+native reindexing), skips and search, rescans ownership/bags, pauses routing,
+and preserves the import, real unlocks, personal pins, filters and unrelated
+marks. A confirmed dialog captures build ID; switching builds before confirming
+cannot reset another build. Tracker and Settings expose Reset build; `/etf reset`
+and `/etf resetbuild` open confirmation. For just one tick use All echoes and
+right-click the row. Manual same-family marks remain shared per character.
+
+Route.lua now samples position before selecting. All available sources are
+candidates; the nearest wins, without tier/count/raid cost weighting. Once a
+zone is chosen its outstanding stops are completed before another zone is
+considered. Auto-advance chooses from the actual latest player position, holding
+an unfinished current camp. runtime.routeZone preserves zone continuity across
+handoff/Skip. Replan clears zone preference and skips, rescans and starts afresh;
+it intentionally preserves manual ticks. Cross-continent distances are not
+meaningful, so remaining same-continent stops come first and cross-continent
+ordering is deterministic. Missing initial position produces a waiting state.
+Replan during map browsing waits until it closes, without changing the user's
+map. lastOutdoorPosition supplies context while inside an instance; no outdoor
+arrow is shown there. Source data and map getter/setter conventions are unchanged.
+
+Collection.lua `ScanBags` is a lightweight one-second fallback plus normal bag/
+loot-event scans. Full discovery/spellbook scans still run every three seconds
+or on relevant events. A two-second login warm-up silently seeds bagSeen.
+Each echo family is announced once per login session, even when unlisted/off-
+build; repeated scans, sorting, use/reacquisition or Reset do not spam. Unknown
+new bag tomes do not become learned. Extremely fast acquisition/consumption
+between bag samples may not be detected. Other players' loot chat cannot alone
+trigger a find. The union of seen keys survives zone changes and build switches.
+
+UI.lua queues independent, non-interactive five-second TOME FOUND banners and
+optional sound. Alerts work with the tracker hidden and route paused. Settings
+adds independent tomeAlerts/tomeSound flags (default true) and preview; preview
+is visibly labelled and changes no collection. /etf testalert is equivalent.
+No new dependencies/files/schema migration. Preferences now fit nine checkboxes;
+the tracker footer has a permanently accessible Reset build button.
+
+25 new Lua regression cases, total 73 Lua + 8 Python = 81. All passed locally.
+The current patch's in-client validation remains pending; use docs/TESTING.md.
+Release publication must be checked in GitHub Actions/Releases before claiming
+success. tools/package.py remains deterministic with 13 install files.

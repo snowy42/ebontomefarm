@@ -75,6 +75,8 @@ function methods:SetFrameStrata(s)self.strata=s end
 function methods:SetFrameLevel(v)self.level=v end
 function methods:GetFrameLevel()return self.level end
 function methods:SetScale(v)self.scale=v end
+function methods:SetAlpha(v)self.alpha=v end
+function methods:GetAlpha()return self.alpha or 1 end
 function methods:GetScale()return self.scale end
 function methods:SetFont(path,size,flags)self.font=path;self.fontSize=size;self.fontFlags=flags end
 function methods:SetFontObject(_)self.fontSize=12 end
@@ -157,6 +159,7 @@ function SetMapByID(mid)M.lastSetMapID=mid;M.map=mid+1;M.level=0;M.mapSwitches=M
 function SetMapToCurrentZone()M.map=M.player.mapID;M.mapSwitches=M.mapSwitches+1 end
 function GetPlayerMapPosition()if M.map==M.player.mapID then return M.player.x,M.player.y end;return 0,0 end
 function GetPlayerFacing()return M.facing end
+function PlaySound(name)M.sounds=M.sounds or {};M.sounds[#M.sounds+1]=name end
 function IsInInstance()return M.inside end
 function GetSubZoneText()return "Recorded test camp"end
 function UnitName(u)if u=="target"then return M.targetName end;return "TestPlayer"end

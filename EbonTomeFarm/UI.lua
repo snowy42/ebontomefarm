@@ -197,30 +197,86 @@ function A:CycleSource(delta)
     local f=UI.details;if #f.locations==0 then return end
     local index=(f.index-1+delta)%#f.locations+1;self:ShowLocation(f.target,f.locations[index])
 end
+function A:ShowResetBuild()
+    local build=self:GetBuild()
+    if not build then self:Print("Import a build first.");return end
+    local id=build.id
+    self:Confirm("Clear this build's manual ticks and skipped stops, then rescan learned echoes and bags? Your build and personal pins are kept.",function()
+        local ok,err=A:ResetBuild(id);if not ok then A:Print(err)end
+    end)
+end
 function A:ShowSettings()
     if not UI.settings then
-        local f=dialog("EbonTomeFarmSettings","Farming preferences",374,430);UI.settings=f;f.checks={}
-        local entries={{"hideDone","Hide collected echoes"},{"dungeons","Include dungeon stops"},{"raids","Include raid stops"},{"tomtom","Use legacy TomTom when installed"},{"autoAdvance","Advance after collecting a stop's tomes"},{"minimap","Show minimap button"},{"locked","Lock tracker position"}}
+        local f=dialog("EbonTomeFarmSettings","Farming preferences",374,534);UI.settings=f;f.checks={}
+        local entries={{"hideDone","Hide collected echoes"},{"dungeons","Include dungeon stops"},{"raids","Include raid stops"},
+            {"tomtom","Use legacy TomTom when installed"},{"autoAdvance","Advance after collecting a stop's tomes"},
+            {"tomeAlerts","Show TOME FOUND notifications"},{"tomeSound","Play a sound for found tomes"},
+            {"minimap","Show minimap button"},{"locked","Lock tracker position"}}
         for i,e in ipairs(entries)do
             local cb=CreateFrame("CheckButton",nil,f,"UICheckButtonTemplate");size(cb,25,25);cb:SetPoint("TOPLEFT",f,"TOPLEFT",16,-48-(i-1)*31)
             text(cb,e[2],12,30,-6,300);cb.key=e[1];f.checks[#f.checks+1]=cb
             cb:SetScript("OnClick",function(self)A.char.settings[self.key]=not not self:GetChecked();A:Refresh()
                 if self.key=="tomtom" and A:ActiveStop()then A:SetWaypoint(A:ActiveStop())end
+                if self.key=="tomeAlerts" and not A.char.settings.tomeAlerts then A:ClearTomeAlerts()end
             end)
         end
         f.tier=button(f,"",160,25,function()
             local tiers={C="B",B="A",A="S",S="C"};A.char.settings.minimumTier=tiers[A.char.settings.minimumTier]or"C";A:Refresh();A:ShowSettings()
-        end);f.tier:SetPoint("TOPLEFT",f,"TOPLEFT",18,-273)
+        end);f.tier:SetPoint("TOPLEFT",f,"TOPLEFT",18,-335)
         f.minus=button(f,"Scale -",78,25,function()A.char.settings.scale=U.clamp(A.char.settings.scale-.05,.7,1.6);A:Render()end);f.minus:SetPoint("LEFT",f.tier,"RIGHT",10,0)
         f.plus=button(f,"+",28,25,function()A.char.settings.scale=U.clamp(A.char.settings.scale+.05,.7,1.6);A:Render()end);f.plus:SetPoint("LEFT",f.minus,"RIGHT",6,0)
-        f.reset=button(f,"Reset positions",140,25,function()A:ResetPositions()end);f.reset:SetPoint("TOPLEFT",f,"TOPLEFT",18,-312)
+        f.reset=button(f,"Reset positions",140,25,function()A:ResetPositions()end);f.reset:SetPoint("TOPLEFT",f,"TOPLEFT",18,-374)
         f.delete=button(f,"Delete this build",158,25,function()
             local b=A:GetBuild();if b then A:Confirm("Delete the farming build '"..b.title.."'? Collection marks are kept.",function()A:DeleteBuild(b.id)end)end
         end);f.delete:SetPoint("LEFT",f.reset,"RIGHT",10,0)
-        text(f,"Right-click a tracker row to clear its manual override.\nArrival never marks a tome collected.\n/etf toggles the tracker; /etf help lists commands.",11,18,-355,335,C.muted)
+        f.resetBuild=button(f,"Reset build",140,25,function()A:ShowResetBuild()end);f.resetBuild:SetPoint("TOPLEFT",f,"TOPLEFT",18,-413)
+        f.testAlert=button(f,"Test notification",158,25,function()A:ShowTomeFound({key="etf:test",name="Armor Mastery",test=true})end);f.testAlert:SetPoint("LEFT",f.resetBuild,"RIGHT",10,0)
+        text(f,"Reset build clears manual ticks and skipped stops.\nReplan keeps ticks and starts at the nearest farm.\nOne zone at a time; arrival never completes a tome.\nRight-click a row to undo just its manual tick.",11,18,-454,335,C.muted)
     end
     for _,cb in ipairs(UI.settings.checks)do cb:SetChecked(self.char.settings[cb.key])end
     UI.settings.tier.label:SetText("Minimum tier: "..self.char.settings.minimumTier);UI.settings:Show()
+end
+-- Non-interactive overlay, independent of the tracker and safe during combat.
+function A:ShowTomeFound(info)
+    if not self.char.settings.tomeAlerts then
+        if info.test then self:Print("Enable TOME FOUND notifications in Settings first.")end
+        return
+    end
+    local q=self.runtime.tomeAlertQueue or {};self.runtime.tomeAlertQueue=q
+    q[#q+1]={key=info.key,name=U.name(info.name),test=info.test,learned=self.runtime.owned[info.key]or false}
+    if not info.test then self:Print("|cff6bdaa3TOME FOUND: "..U.name(info.name).."|r")end
+    if not self.runtime.tomeAlertActive then self:NextTomeAlert()end
+end
+function A:NextTomeAlert()
+    local q=self.runtime.tomeAlertQueue
+    if not q or #q==0 then return end
+    if not UI.tomeAlert then
+        local f=CreateFrame("Frame","EbonTomeFarmFoundAlert",UIParent);UI.tomeAlert=f
+        size(f,520,112);f:SetPoint("TOP",UIParent,"TOP",0,-230);f:SetFrameStrata("FULLSCREEN_DIALOG")
+        f:EnableMouse(false);skin(f,.035,.06,.06,.96);f:SetBackdropBorderColor(unpack(C.gold))
+        f.heading=text(f,"TOME FOUND",21,20,-14,480,C.gold);f.heading:SetJustifyH("CENTER")
+        f.name=text(f,"",22,20,-43,480,C.green);f.name:SetJustifyH("CENTER")
+        f.info=text(f,"",11,20,0,480,C.muted);f.info:ClearAllPoints();f.info:SetPoint("BOTTOM",f,"BOTTOM",0,13);f.info:SetJustifyH("CENTER")
+    end
+    local entry=table.remove(q,1);local f=UI.tomeAlert
+    self.runtime.tomeAlertActive=entry;self.runtime.tomeAlertRemaining=5
+    f.heading:SetText(entry.test and "TOME FOUND (PREVIEW)"or"TOME FOUND")
+    f.name:SetText(entry.name);f:SetHeight(math.max(112,81+f.name:GetStringHeight()))
+    f.info:SetText(entry.test and "Preview only. Your collection has not changed."or entry.learned and "This echo is already learned. A tome is in your bags."or"In your bags. Use the tome to learn it.")
+    f:SetAlpha(1);f:Show()
+    if self.char.settings.tomeSound and PlaySound then pcall(PlaySound,"LevelUp")end
+end
+function A:UpdateTomeAlerts(elapsed)
+    if not self.runtime.tomeAlertActive then return end
+    if not self.char.settings.tomeAlerts then self:ClearTomeAlerts();return end
+    local remaining=(self.runtime.tomeAlertRemaining or 0)-elapsed;self.runtime.tomeAlertRemaining=remaining
+    if remaining<=0 then
+        self.runtime.tomeAlertActive=nil;UI.tomeAlert:Hide();self:NextTomeAlert()
+    else UI.tomeAlert:SetAlpha(math.min(1,remaining/.75))end
+end
+function A:ClearTomeAlerts()
+    self.runtime.tomeAlertQueue={};self.runtime.tomeAlertActive=nil
+    if UI.tomeAlert then UI.tomeAlert:Hide()end
 end
 -- Show actual outstanding targets without turning a shared raid into a huge card.
 -- The full list is available in the tooltip and the existing paginated picker.
@@ -305,6 +361,7 @@ function A:CreateUI()
     UI.start=button(body,"Start route",92,25,function()if A.runtime.running then A:PauseRoute()else A:StartRoute()end end);UI.start:SetPoint("TOPLEFT",card,"BOTTOMLEFT",0,-11)
     UI.next=button(body,"Skip",58,25,function()A:SkipStop()end);UI.next:SetPoint("LEFT",UI.start,"RIGHT",6,0);tip(UI.next,"Defer this stop","Keeps its tomes on your checklist. Replan restores deferred stops.")
     UI.replan=button(body,"Replan",66,25,function()A:Replan()end);UI.replan:SetPoint("LEFT",UI.next,"RIGHT",6,0)
+    tip(UI.replan,"Replan from here","Restore skipped stops, rescan ownership and start at the nearest farm. Finish one zone at a time. Use Reset build to clear manual ticks.")
     UI.settingsButton=button(body,"Settings",83,25,function()A:ShowSettings()end);UI.settingsButton:SetPoint("TOPRIGHT",card,"BOTTOMRIGHT",0,-11)
     UI.search=edit(body,206,25,false);UI.search:SetPoint("TOPLEFT",UI.start,"BOTTOMLEFT",0,-10)
     UI.search:SetScript("OnTextChanged",function(self)A.runtime.search=self:GetText();A.runtime.scroll=0;A:RenderRows()end)
@@ -315,7 +372,9 @@ function A:CreateUI()
     UI.rows={};UI.scroll=slider(list);UI.scroll:SetPoint("TOPRIGHT",list,"TOPRIGHT",0,-2);UI.scroll:SetPoint("BOTTOMRIGHT",list,"BOTTOMRIGHT",0,2);UI.scroll:SetWidth(9)
     UI.scroll:SetScript("OnValueChanged",function(_,v)if not UI.updating then A.runtime.scroll=math.floor(v+.5);A:RenderRows()end end)
     UI.empty=text(list,"",12,10,-22,285,C.muted)
-    UI.footer=text(body,"",10,0,0,310,C.muted);UI.footer:ClearAllPoints();UI.footer:SetPoint("BOTTOMLEFT",body,"BOTTOMLEFT",0,2)
+    UI.footer=text(body,"",10,0,0,310,C.muted);UI.footer:ClearAllPoints();UI.footer:SetPoint("BOTTOMLEFT",body,"BOTTOMLEFT",0,1)
+    UI.resetBuild=button(body,"Reset build",100,24,function()A:ShowResetBuild()end);UI.resetBuild:SetPoint("BOTTOMRIGHT",body,"BOTTOMRIGHT",0,0)
+    tip(UI.resetBuild,"Reset this build","Undo this build's manual ticks and skips, then rescan real learned echoes and bags. Keeps the imported build and personal pins.")
     local resize=CreateFrame("Button",nil,f);size(resize,17,17);resize:SetPoint("BOTTOMRIGHT",f,"BOTTOMRIGHT",-1,1)
     resize:SetNormalTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up");resize:SetScript("OnMouseDown",function()if not A.char.settings.locked and not A.char.settings.collapsed then UI.resizing=true;f:StartSizing("BOTTOMRIGHT")end end)
     resize:SetScript("OnMouseUp",function()f:StopMovingOrSizing();if UI.resizing then A.char.settings.width=f:GetWidth();A.char.settings.height=f:GetHeight()end;UI.resizing=false;A:Render()end)
@@ -340,7 +399,7 @@ function A:LayoutRows()
     local width=self.frame:GetWidth()-24
     UI.build:SetWidth(width-74);UI.build.label:SetWidth(width-94)
     UI.card.title:SetWidth(width-20);UI.card.info:SetWidth(width-20);UI.card.targets:SetWidth(width-20);UI.search:SetWidth(width-116);UI.searchHint:SetWidth(width-132)
-    UI.progressLabel:SetWidth(width);UI.footer:SetWidth(width-6)
+    UI.progressLabel:SetWidth(width);UI.footer:SetWidth(width-110)
     self:SetStopTargetLabel(UI.card.targets,self:ActiveStop()or self.runtime.route[1])
     local count=math.max(1,math.floor(UI.list:GetHeight()/44))
     for i=1,count do
@@ -404,7 +463,7 @@ function A:RenderRows()
         else row.target=nil;row.activeFarm=false;row:Hide()end
     end
     shown(UI.empty,#entries==0)
-    UI.empty:SetText(not b and "Turn your build into a farming checklist.\n\nClick Import above to paste your Hub export.\n\nCollection marks are saved per character."or search~=""and"No matches for this search."or"No outstanding echoes in this view.\n\nSwitch to All to review collected entries,\nor change the minimum tier in Settings.")
+    UI.empty:SetText(not b and "Turn your build into a farming checklist.\n\nClick Import above to paste your Hub export.\n\nCollection marks are saved per character."or search~=""and"No matches for this search."or"No outstanding echoes in this view.\nReset build clears accidental ticks.\nAll echoes shows collected entries.")
 end
 function A:Render()
     if not self.frame then return end
@@ -422,10 +481,10 @@ function A:Render()
     UI.progressLabel:SetText(string.format("%d / %d collected     %d still needed",done,total,total-done));UI.progress:SetValue(total>0 and done/total or 0)
     local s=self:ActiveStop()or self.runtime.route[1]
     UI.card.caption:SetText(self:ActiveStop()and "CURRENT FARM"or"NEXT FARM")
-    UI.card.title:SetText(s and s.loc.place or b and "No routable stops remaining"or"Import a build to get started")
-    UI.card.info:SetText(s and string.format("%s  |  %d tome%s",s.loc.zone or "",#s.targets,#s.targets==1 and ""or"s")or"Unmapped echoes stay in the checklist below.")
+    UI.card.title:SetText(s and s.loc.place or self.runtime.waitingForPosition and "Waiting for your location"or b and "No routable stops remaining"or"Import a build to get started")
+    UI.card.info:SetText(s and string.format("%s  |  %d tome%s",s.loc.zone or "",#s.targets,#s.targets==1 and ""or"s")or self.runtime.waitingForPosition and "Close the map; stand in a mapped outdoor zone."or"Unmapped echoes stay in the checklist below.")
     UI.start.label:SetText(self.runtime.running and "Pause"or"Start route");UI.filter.label:SetText(self.char.settings.hideDone and "Needed"or"All echoes")
     local skipped=0;for _ in pairs(self.runtime.skipped)do skipped=skipped+1 end
-    UI.footer:SetText(string.format("%d stops  /  %d no-pin  /  %d deferred",#self.runtime.route,noPin,skipped))
+    UI.footer:SetText(string.format("%d stops  /  %d no-pin\n%d deferred",#self.runtime.route,noPin,skipped))
     self:LayoutRows();self:UpdateNavigation()
 end

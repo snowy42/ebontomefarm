@@ -8,6 +8,9 @@ local function test(name,fn)
 end
 local function reset()
     if WorldMapFrame:IsShown()then WorldMapFrame:Hide()end
+    A:ClearTomeAlerts();A.runtime.route={};A.runtime.routeZone=nil;A.runtime.lastOutdoorPosition=nil
+    A.runtime.waitingForPosition=false;A.runtime.pendingReplan=nil;A.runtime.bagSeen={};A.runtime.bagBaselineReady=false;A.runtime.bagWarmup=nil
+    A.char.settings.tomeAlerts=true;A.char.settings.tomeSound=true;A.char.settings.show=true;M.sounds={};M.messages={}
     A.runtime.skipped={};A.runtime.active=nil;A.runtime.running=false;A.runtime.owned={};A.runtime.bags={};A.runtime.position=nil
     A.char.manual={};A.char.locations={};A.char.settings.minimumTier="C";A.char.settings.raids=true;A.char.settings.dungeons=true;A.char.settings.hideDone=true;A.char.settings.autoAdvance=true
     A.db.builds={};A.db.nextID=1;A.char.activeBuild=nil;M.discovered={};M.bags={};M.book={};M.inside=false
@@ -297,4 +300,215 @@ test("many shared targets stay compact without dropping the full picker list",fu
     A:OpenStopDetails(stop);eq(#A.UI.picker.items,22);eq(stop.targets[22].name,before)
     A.UI.picker:Hide();GameTooltip:Hide()
 end)
+local function tomeLink(name,id)
+    return "|cff0070dd|Hitem:"..(id or 300001)..":0:0:0:0:0:0:0|h[Tome of Echo: "..name.."]|h|r"
+end
+local function alertMessages()
+    local n=0;for _,m in ipairs(M.messages)do if m:find("TOME FOUND:",1,true)then n=n+1 end end;return n
+end
+local function withStops(specs,fn)
+    local saved=A.RouteCandidates;local names,seen={},{}
+    for _,s in ipairs(specs)do for _,name in ipairs(s[5])do if not seen[name]then names[#names+1]=name;seen[name]=true end end end
+    A.RouteCandidates=function(self)
+        local out,by={},{}
+        for _,s in ipairs(specs)do
+            local z=self.Data.zones[s[2]]
+            local loc={id=s[1],mapID=s[2],x=s[3],y=s[4],c=z.c,zone=z.name,place=s[1],kind=s[6]or"world",mobs={"Test mob"}}
+            local stop={id=s[1],loc=loc,mapID=loc.mapID,x=loc.x,y=loc.y,c=z.c,targets={},targetLocs={}}
+            for _,name in ipairs(s[5])do
+                local t=self:TargetByKey(self.util.key(name))
+                if t and self:Eligible(t)and not self:IsDone(t)and self:LocationUsable(loc)then stop.targets[#stop.targets+1]=t;stop.targetLocs[t.key]=loc end
+            end
+            if #stop.targets>0 then out[#out+1]=stop;by[stop.id]=stop end
+        end
+        return out,by
+    end
+    local ok,err=pcall(function()assert(A:Import(table.concat(names,"\n")));fn()end)
+    A.RouteCandidates=saved;if not ok then error(err)end
+end
+test("reset all accidental ticks restores the same imported build",function()
+    reset();local b=assert(A:Import("Adaptive Power\nArcane Cadence\nArmor Mastery"));local source=A.util.copy(b.sourceTargets)
+    for _,t in ipairs(b.targets)do A:SetManual(t.key,"done")end
+    eq(#A.runtime.route,0);A:Replan();eq(#A.runtime.route,0)
+    assert(A:ResetBuild(b.id));eq(#A.db.builds,1);eq(A:GetBuild(),b);eq(#b.sourceTargets,#source)
+    for i,t in ipairs(source)do eq(b.sourceTargets[i].name,t.name)end
+    for _,t in ipairs(b.targets)do eq(A:IsDone(t),false);eq(A.char.manual[t.key],nil)end
+    assert(#A.runtime.route>0);eq(A.runtime.running,false)
+end)
+test("reset rescans real learned and bag tomes while preserving other marks and pins",function()
+    reset();local b=assert(A:Import("Adaptive Power\nArcane Cadence\nArmor Mastery"))
+    for _,t in ipairs(b.targets)do A.char.manual[t.key]="need"end
+    A.char.manual.battlerhythm="done";local pins={armormastery={mapID=29,x=.4,y=.6}};A.char.locations=pins
+    M.discovered[200002]=true;M.bags[0]={tomeLink("Arcane Cadence",300003)};A.runtime.skipped.fake=true
+    A.UI.search:SetText("nothing matches");assert(A:ResetBuild(b.id))
+    eq(A:Status(A:TargetByKey("adaptivepower")),"learned");eq(A:Status(A:TargetByKey("arcanecadence")),"bag")
+    eq(A:Status(A:TargetByKey("armormastery")),"needed");eq(A.char.manual.battlerhythm,"done")
+    eq(A.char.locations,pins);eq(next(A.runtime.skipped),nil);eq(A.UI.search:GetText(),"");eq(A.runtime.scroll,0)
+end)
+test("reset requires confirmation and Cancel leaves marks and skips intact",function()
+    reset();assert(A:Import("Adaptive Power\nArcane Cadence"));A:SetManual("adaptivepower","done");A.runtime.skipped.test=true
+    M.Click(A.UI.resetBuild);assert(A.UI.confirm:IsShown());M.Click(A.UI.confirm.no)
+    eq(A.char.manual.adaptivepower,"done");eq(A.runtime.skipped.test,true)
+    M.Click(A.UI.resetBuild);M.Click(A.UI.confirm.yes);eq(A.char.manual.adaptivepower,nil);eq(next(A.runtime.skipped),nil)
+end)
+test("reset confirmation cannot reset a different newly selected build",function()
+    reset();local old=assert(A:Import("Adaptive Power\nArcane Cadence"));A:ShowResetBuild()
+    local new=assert(A:Import("Armor Mastery"));A:SetManual("armormastery","done");M.Click(A.UI.confirm.yes)
+    eq(A:GetBuild(),new);eq(A.char.manual.armormastery,"done");eq(#A.db.builds,2)
+end)
+test("reset and reroute aliases are usable without deleting ownership",function()
+    reset();assert(A:Import("Adaptive Power\nArcane Cadence"));A:SetManual("adaptivepower","done")
+    SlashCmdList.EBONTOMEFARM("scan");eq(A.char.manual.adaptivepower,"done")
+    SlashCmdList.EBONTOMEFARM("reset");M.Click(A.UI.confirm.yes);eq(A.char.manual.adaptivepower,nil)
+    SlashCmdList.EBONTOMEFARM("reroute");assert(A:ActiveStop())
+end)
+test("first farm is nearest even when a farther raid covers more high-tier targets",function()
+    reset();M.player={mapID=29,x=.5,y=.5}
+    withStops({{"near",29,.501,.5,{"Nearby Tome"}},{"many",29,.8,.8,{"Raid One","Raid Two","Raid Three"},"raid"}},function()
+        for _,t in ipairs(A:GetBuild().sourceTargets)do t.tier=t.name=="Nearby Tome"and"C"or"S"end
+        A:Replan();eq(A:ActiveStop().id,"near")
+    end)
+end)
+test("closest source wins across all alternatives for the same tome",function()
+    reset();M.player={mapID=29,x=.5,y=.5}
+    withStops({{"far-source",29,.8,.8,{"Shared Tome"}},{"close-source",29,.501,.5,{"Shared Tome"}},{"another",29,.7,.6,{"Second Tome"}}},function()
+        A:Replan();eq(A:ActiveStop().id,"close-source");eq(#A.runtime.route,2)
+        local n=0;for _,s in ipairs(A.runtime.route)do for _,t in ipairs(s.targets)do if t.key=="sharedtome"then n=n+1 end end end;eq(n,1)
+    end)
+end)
+test("nearest-first completes the selected zone before an adjacent closer stop",function()
+    reset();M.player={mapID=29,x=.5,y=.85}
+    local wx,wy=A:WorldPoint(29,.5,.85);local z=A.Data.zones[30]
+    local x,y=(z.left-wx-50)/z.width,(z.top-wy)/z.height
+    assert(x>0 and x<1 and y>0 and y<1)
+    withStops({{"first",29,.5,.85,{"First Tome"}},{"same-zone",29,.8,.85,{"Same Zone Tome"}},{"other-zone",30,x,y,{"Other Zone Tome"}}},function()
+        A:Replan();eq(A.runtime.route[1].id,"first");eq(A.runtime.route[2].id,"same-zone");eq(A.runtime.route[3].id,"other-zone")
+        A:SetManual("firsttome","done");eq(A:ActiveStop().id,"same-zone")
+        A:SetManual("samezonetome","done");eq(A:ActiveStop().id,"other-zone")
+    end)
+end)
+test("completion chooses the next closest from actual player position not the old plan",function()
+    reset();M.player={mapID=29,x=.1,y=.5}
+    withStops({{"first",29,.1,.5,{"First Tome"}},{"middle",29,.3,.5,{"Middle Tome"}},{"end",29,.9,.5,{"Last Tome"}}},function()
+        A:Replan();eq(A.runtime.route[2].id,"middle")
+        M.player.x=.89;A:SetManual("firsttome","done");eq(A:ActiveStop().id,"end")
+    end)
+end)
+test("Replan restores skipped stops and chooses afresh without clearing manual ticks",function()
+    reset();M.player={mapID=29,x=.1,y=.5}
+    withStops({{"near",29,.1,.5,{"First Tome"}},{"far",29,.9,.5,{"Last Tome"}}},function()
+        A:Replan();A:SkipStop();eq(A:ActiveStop().id,"far")
+        A:Replan();eq(A:ActiveStop().id,"near");eq(next(A.runtime.skipped),nil)
+        M.player.x=.89;A:Replan();eq(A:ActiveStop().id,"far")
+        A:SetManual("lasttome","done");A:Replan();eq(A.char.manual.lasttome,"done");eq(A:ActiveStop().id,"near")
+    end)
+end)
+test("no position never creates an arbitrary raid destination and resumes when sampled",function()
+    reset();M.player={mapID=0,x=0,y=0}
+    withStops({{"near",29,.5,.5,{"Local Tome"}},{"icc",493,.5,.5,{"Raid Tome"},"raid"}},function()
+        A:Replan();eq(A:ActiveStop(),nil);eq(#A.runtime.route,0);assert(A.runtime.waitingForPosition)
+        assert(A.UI.card.title:GetText():find("Waiting",1,true))
+        M.player={mapID=29,x=.49,y=.5};M.Tick(2);eq(A:ActiveStop().id,"near")
+    end)
+end)
+test("replan while browsing the map waits without moving it then uses current position",function()
+    reset();M.player={mapID=29,x=.1,y=.5}
+    withStops({{"old",29,.1,.5,{"First Tome"}},{"new",29,.9,.5,{"Last Tome"}}},function()
+        A:Replan();WorldMapFrame:Show();M.map=493;M.player.x=.89;local n=M.mapSwitches
+        A:Replan();eq(A:ActiveStop(),nil);eq(M.map,493);eq(M.mapSwitches,n)
+        WorldMapFrame:Hide();M.Tick(2);eq(A:ActiveStop().id,"new")
+    end)
+end)
+test("current continent is exhausted before ICC or Crystalsong",function()
+    reset();M.player={mapID=37,x=.5,y=.5}
+    local names={};for _,t in ipairs(A.Data.tomes)do names[#names+1]=t.name end
+    assert(A:Import(table.concat(names,"\n")));A:Replan();local first=assert(A:ActiveStop());eq(first.c,2)
+    local candidates=A:RouteCandidates();local distance=A:Distance(A.runtime.position,first)
+    for _,s in ipairs(candidates)do if s.c==2 then assert(distance<=A:Distance(A.runtime.position,s)+.001)end end
+    local left=false;local zones={};local current
+    for _,s in ipairs(A.runtime.route)do
+        if s.c~=2 then left=true else assert(not left,"Returned to Eastern Kingdoms after leaving")end
+        if current~=s.mapID then assert(not zones[s.mapID],"Zone split across the route");zones[s.mapID]=true;current=s.mapID end
+    end
+end)
+test("native-map scan precedes destination choice after zone event",function()
+    reset();M.player={mapID=493,x=.5,y=.5}
+    withStops({{"local",29,.5,.5,{"Local Tome"}},{"icc",493,.5,.5,{"Raid Tome"},"raid"}},function()
+        A:SamplePosition();M.player={mapID=29,x=.49,y=.5};M.Emit("ZONE_CHANGED_NEW_AREA")
+        A:Replan();eq(A:ActiveStop().id,"local")
+    end)
+end)
+test("automatic advance can still be disabled",function()
+    reset();M.player={mapID=29,x=.1,y=.5};A.char.settings.autoAdvance=false
+    withStops({{"first",29,.1,.5,{"First Tome"}},{"last",29,.9,.5,{"Last Tome"}}},function()
+        A:Replan();A:SetManual("firsttome","done");eq(A.runtime.running,false);eq(A:ActiveStop(),nil);eq(#A.runtime.route,1)
+    end)
+end)
+test("existing login bags silently seed notifications including late login data",function()
+    reset();A:BeginBagBaseline();A:ScanBags();M.bags[0]={tomeLink("Adaptive Power")};M.Tick(20)
+    eq(alertMessages(),0);eq(A.runtime.tomeAlertActive,nil);assert(A.runtime.bagBaselineReady)
+    M.bags[0][2]=tomeLink("Arcane Cadence",300003);M.Tick(6)
+    eq(alertMessages(),1);eq(A.runtime.tomeAlertActive.name,"Arcane Cadence")
+end)
+test("bag polling alone finds new tomes even with tracker hidden and route paused",function()
+    reset();assert(A:Import("Armor Mastery"));A:ScanBags();A.char.settings.show=false;A:Render();A:PauseRoute()
+    M.bags[0]={tomeLink("Armor Mastery")};M.Tick(6)
+    eq(alertMessages(),1);assert(A.UI.tomeAlert:IsShown());eq(A.UI.tomeAlert.name:GetText(),"Armor Mastery")
+    eq(A:Status(A:TargetByKey("armormastery")),"bag");eq(A.frame:IsShown(),false);eq(A.runtime.running,false)
+end)
+test("loot events debounce to prompt confirmed bag notification",function()
+    reset();A:ScanBags();M.bags[0]={tomeLink("Adaptive Power")};M.Emit("BAG_UPDATE",0);M.Tick(3)
+    eq(alertMessages(),1);eq(A.runtime.tomeAlertActive.name,"Adaptive Power")
+end)
+test("bag moves rescans and using/reacquiring the same tome do not spam",function()
+    reset();A:ScanBags();M.bags[0]={tomeLink("Adaptive Power")};A:ScanBags();eq(alertMessages(),1)
+    M.bags[1]=M.bags[0];M.bags[0]={};A:ScanBags();A:ScanCollection();M.Tick(40);eq(alertMessages(),1)
+    M.bags={};A:ScanBags();M.bags[2]={tomeLink("Adaptive Power")};A:ScanBags();eq(alertMessages(),1)
+end)
+test("multiple new tomes queue separate banners and sound once each",function()
+    reset();A:ScanBags();M.bags[0]={tomeLink("Adaptive Power"),tomeLink("Arcane Cadence",300003)};A:ScanBags()
+    eq(alertMessages(),2);eq(A.runtime.tomeAlertActive.name,"Adaptive Power");eq(#A.runtime.tomeAlertQueue,1);eq(#M.sounds,1)
+    M.Tick(27);eq(A.runtime.tomeAlertActive.name,"Arcane Cadence");eq(#M.sounds,2)
+    M.Tick(27);eq(A.runtime.tomeAlertActive,nil);eq(A.UI.tomeAlert:IsShown(),false);eq(alertMessages(),2)
+end)
+test("disabled notifications do not backlog old drops and sound has its own switch",function()
+    reset();A:ScanBags();A.char.settings.tomeAlerts=false;M.bags[0]={tomeLink("Adaptive Power")};A:ScanBags();eq(alertMessages(),0)
+    A.char.settings.tomeAlerts=true;A.char.settings.tomeSound=false;A:ScanBags();eq(alertMessages(),0)
+    M.bags[0][2]=tomeLink("Arcane Cadence",300003);A:ScanBags();eq(alertMessages(),1);eq(#M.sounds,0)
+    A.char.settings.tomeAlerts=false;M.Tick(1);eq(A.runtime.tomeAlertActive,nil);eq(A.UI.tomeAlert:IsShown(),false)
+end)
+test("reset build and scan never manufacture a new tome-found notification",function()
+    reset();local b=assert(A:Import("Adaptive Power\nArcane Cadence"));M.bags[0]={tomeLink("Adaptive Power")};A:ScanBags()
+    A:SetManual("adaptivepower","need");A:ResetBuild(b.id);A:ScanCollection();A:Replan();eq(alertMessages(),0)
+    eq(A:Status(A:TargetByKey("adaptivepower")),"bag")
+end)
+test("notifications accept unlisted tomes but never count as learned",function()
+    reset();A:ScanBags();M.bags[0]={tomeLink("New Server Echo")};A:ScanBags()
+    eq(A.runtime.tomeAlertActive.name,"New Server Echo");eq(A.runtime.owned.newserverecho,nil)
+    assert(A.runtime.bags.newserverecho);eq(alertMessages(),1)
+end)
+test("preview notification is labelled and changes neither bags nor manual marks",function()
+    reset();assert(A:Import("Armor Mastery"));SlashCmdList.EBONTOMEFARM("testalert")
+    assert(A.UI.tomeAlert.heading:GetText():find("PREVIEW",1,true));eq(A:Status(A:TargetByKey("armormastery")),"needed")
+    eq(next(A.runtime.bags),nil);eq(next(A.char.manual),nil);eq(alertMessages(),0)
+end)
+test("reset button and notification/settings contents fit their frames",function()
+    reset();assert(A:Import("Armor Mastery"));A:ShowSettings()
+    for _,dims in ipairs({{344,418},{354,500},{600,900}})do
+        A.char.settings.width=dims[1];A.char.settings.height=dims[2];A:Render()
+        local x,y,w,h=A.UI.footer:Rect();local bx,by,bw,bh=A.UI.resetBuild:Rect();assert(x+w<=bx);assert(y+h<=by+bh+2)
+        local _,ly,_,lh=A.UI.list:Rect();assert(ly+lh<=by)
+    end
+    local function inside(parent,child)
+        local x,y,w,h=parent:Rect();local a,b,c,d=child:Rect();assert(a>=x and b>=y and a+c<=x+w and b+d<=y+h)
+    end
+    for _,cb in ipairs(A.UI.settings.checks)do inside(A.UI.settings,cb)end
+    inside(A.UI.settings,A.UI.settings.resetBuild);inside(A.UI.settings,A.UI.settings.testAlert)
+    A:ShowTomeFound({key="long",name=string.rep("Long echo ",18),test=true})
+    inside(A.UI.tomeAlert,A.UI.tomeAlert.name);inside(A.UI.tomeAlert,A.UI.tomeAlert.info)
+    A:ShowResetBuild();inside(A.UI.confirm,A.UI.confirm.message)
+    local _,y,_,h=A.UI.confirm.message:Rect();local _,by=A.UI.confirm.yes:Rect();assert(y+h<=by)
+    A:ResetPositions()
+end)
+
 print(string.format("\n%d tests passed under %s",passed,_VERSION))

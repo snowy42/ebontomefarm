@@ -2,7 +2,7 @@
 
 ## Automated coverage
 
-`lua5.1 tests/test.lua` runs 48 tests in the real Lua 5.1 interpreter against a
+`lua5.1 tests/test.lua` runs 73 tests in the real Lua 5.1 interpreter against a
 restricted original-client API mock. It loads every addon module in TOC order.
 The mock intentionally lacks modern convenience APIs such as SetSize/SetShown.
 
@@ -30,6 +30,26 @@ selection, collection refresh, names during arrival/map/instance states,
 active-row highlighting, and non-overlapping layouts at supported sizes.
 A render of the actual mock frame geometry was also visually inspected with
 substitute fonts/icons. It is not an in-game capture.
+
+## 1.0.2 regressions and live checks
+
+Added 25 Lua tests for all-ticked reset, real learned/bag preservation,
+confirmation/cancellation/build switching, aliases, nearest single tome versus
+multi-tome raids, alternate sources, zone grouping, fresh-position handoff,
+Replan/Skip semantics, missing samples and map browsing, continent ordering,
+zone events, automatic-advance preference, notification login baseline,
+polling/events/queues/deduplication/switches, previews and layout bounds.
+The total is 73 Lua tests plus eight Python tests (81).
+
+In the actual client, tick an unlearned item then Reset build and confirm it
+returns to needed; learned/bag items must remain collected. Check Cancel is
+harmless. Start outdoors in Eastern Kingdoms with nearby and Northrend sources;
+Replan should pick the nearest available local source, finish that zone and
+only then leave it. Test Replan while the world map is open, then close it.
+Preview the new banner with `/etf testalert`, acquire a real tome, sort bags,
+then obtain two different tomes. Check one banner per family, queued display,
+no login flood, and both notification switches. These 1.0.2 live checks have
+not yet been performed by the developer.
 
 ## Required live validation
 

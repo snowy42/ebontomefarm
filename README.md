@@ -3,14 +3,14 @@
 Turn a Project Ebonhold echo build into a practical tome-farming checklist and itinerary.
 For the **original 3.3.5a client (Interface 30300, Lua 5.1)**, not Retail WoW.
 
-**Version 1.0.1 names the tomes to collect in both the guide and farm card.**
+**Version 1.0.2 names the tomes to collect in both the guide and farm card.**
 Matthew has confirmed the initial 1.0.0 UI/import/route display working in
 Ebonhold. This update passes automated tests; full live-client acceptance
 is still pending, so releases remain marked prerelease.
 
 ## Install
 
-Download `EbonTomeFarm-1.0.1.zip` from [Releases](https://github.com/snowy42/ebontomefarm/releases).
+Download `EbonTomeFarm-1.0.2.zip` from [Releases](https://github.com/snowy42/ebontomefarm/releases).
 Close the game, extract it into your client's `Interface\AddOns` directory,
 and restart. The result must be:
 
@@ -29,8 +29,9 @@ No Python, external application, or online data download is needed in game.
    EbonholdHub. Click **Preview**, then **Import build**. A build page URL is
    not an export. **From Hub** also copies a build already saved in the
    installed EbonholdHub addon, without changing the original.
-2. Click **Start**. The itinerary groups shared camps/instances, considers
-   priority and distance, and gives a current farming stop. The built-in
+2. Click **Start**. The itinerary starts with the nearest known farm, groups shared camps,
+   and finishes all outstanding stops in that zone before choosing the next
+   nearest zone. Priority tiers are filters, not distance weights. The built-in
    direction card and native map pins work without TomTom. Compatible legacy
    TomTom gets the current waypoint when installed.
 3. Click any echo row for its map, farming mobs or bosses, alternate sources,
@@ -64,6 +65,41 @@ in the details window to restore automatic detection. **Record here** saves
 your current outdoor position as a personal source for the selected echo.
 Normal logout or `/reload` lets the client save your progress to disk.
 
+## Undo mistakes and reset the build
+
+**Reset build** is always at the bottom of the expanded tracker, even when
+all entries have been ticked. It is also in Settings or `/etf reset`.
+Confirming clears manual collected/needed overrides for this build's echoes,
+restores skipped stops, clears search, and rescans permanent unlocks and bags.
+Your imported build, genuine unlocks, personal pins, filters and unrelated
+collection marks are kept. The route is paused for review; click **Start route**.
+Manual marks for the same echo family are shared on that character across builds.
+
+**Replan** deliberately keeps manual ticks. It restores skipped stops, rescans
+ownership, and starts from the closest outstanding farm at your current
+position, overriding the previously chosen zone. Close the world map for a
+fresh sample; without a position the addon waits rather than choosing a raid.
+For one accidental tick, switch to **All echoes** and right-click that row to
+restore automatic detection. `/etf scan` rescans without clearing overrides.
+
+## Tome-found notifications
+
+A new tome appearing in bags displays a large **TOME FOUND** banner with its
+name, writes a chat message, and optionally plays a sound. Multiple finds queue
+separately. The lightweight bag pass runs every second as a fallback to bag/loot
+events; it works with navigation paused and the tracker hidden.
+
+Existing login bags form a silent baseline. Each tome family is announced
+once per login session, so sorting bags, rescanning, using/reacquiring the same
+tome, or resetting the build cannot repeatedly announce it. Off-build/unlisted
+tomes can also be announced. This detects a bag item, not permanent learning;
+use the tome normally. Extremely quick acquisition-and-consumption between bag
+samples may not be seen. Nothing is inferred merely from other players' loot chat.
+
+Enable/disable the banner and sound independently in **Settings**. Use
+**Test notification** there or `/etf testalert` for a labelled preview that does
+not change your collection.
+
 ## Coverage and limitations
 
 The bundled snapshot contains **128 tome families and 173 community source
@@ -77,8 +113,11 @@ pins are representative spawns, not verified tome drop points; inferred name
 matches and conflicting reports are labelled. The community dataset supplies
 no measured drop rates. See [data provenance](docs/DATA.md).
 
-Routing is a grouped, proximity-based itinerary, not a road/flight-path/portal
-solver. You choose how to travel and perform all movement and combat. English
+Routing uses straight-line distances and finishes one native map zone at a
+time. It stays on the current continent while there are remaining stops
+there. Across continents, travel distance is not known; the later itinerary
+uses a stable order, not a claimed shortest journey. Replan after travelling
+to start from your new position. It is not a road/flight-path/portal solver. You choose how to travel and perform all movement and combat. English
 names and the English `Echoes` spellbook tab are the tested integration targets.
 Server updates, localisation and modified client APIs can require adjustments.
 
@@ -89,7 +128,8 @@ EbonTomeFarm does not select your in-run echoes or replace Hub's auto-pick tool.
 ## Commands and support
 
 `/etf import`, `/etf start`, `/etf pause`, `/etf skip`, `/etf replan`,
-`/etf scan`, `/etf settings`, `/etf resetpos`, `/etf debug`.
+`/etf reset`, `/etf scan`, `/etf testalert`, `/etf settings`, `/etf resetpos`, `/etf debug`.
+`/etf reroute` is an alias for Replan; `/etf resetbuild` is an alias for Reset build.
 
 For an error, enable `/console scriptErrors 1`, reload, and report the **first**
 Lua error, the action that caused it and `/etf debug` output in
@@ -104,7 +144,7 @@ python3 -m unittest discover -s tests -p 'test_*.py' -v
 python3 tools/package.py
 ```
 
-There are **48 Lua addon/mock tests and 8 Python distribution/parser tests**.
+There are **73 Lua addon/mock tests and 8 Python distribution/parser tests**.
 The deterministic packager validates TOC order, required files, licences and
 version consistency, then produces a correctly rooted ZIP, per-file manifest
 and SHA-256 checksums. Every normal main push runs CI and preserves exact

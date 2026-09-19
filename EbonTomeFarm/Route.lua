@@ -1,4 +1,5 @@
--- Deterministic greedy farm-stop grouping. Not a terrain/flight-path travel solver.
+-- Nearest-first farming, finishing one native map zone at a time.
+-- Distances are straight-line within a continent, not roads/portals/flight paths.
 local A,U=EbonTomeFarm,EbonTomeFarm.util
 function A:Eligible(t)
     return t.locked or (self.TierRank[t.tier] or 0)>=(self.TierRank[self.char.settings.minimumTier] or 1)
@@ -77,47 +78,77 @@ end
 function A:RebuildRoute()
     local candidates,byid=self:RouteCandidates()
     local r,covered={},{}
-    local cursor=self.runtime.position
     local old=self.runtime.active
+    local previous=self:ActiveStop()
     local active=old and byid[old]
-    -- Stay at an active farm while it has outstanding targets. Merely arriving never completes it.
-    if active and not self.runtime.skipped[old] then
-        r[#r+1]=active;cursor=active
+    if active and self.runtime.skipped[old] then active=nil end
+    -- Sample BEFORE choosing: bag/zone events may run before the navigation tick.
+    if self.SamplePosition then self:SamplePosition() end
+    local mapOpen=WorldMapFrame and WorldMapFrame:IsShown()
+    if not mapOpen then self.runtime.pendingReplan=nil end
+    local cursor=self.runtime.position
+    if not cursor and IsInInstance and IsInInstance() then cursor=self.runtime.lastOutdoorPosition end
+    if self.runtime.pendingReplan then cursor=nil end
+    local zone=self.runtime.running and self.runtime.routeZone or nil
+    if active then
+        -- Arrival alone never completes a farm. Keep all outstanding camp targets.
+        r[#r+1]=active;cursor=active;zone=active.mapID
         for _,t in ipairs(active.targets) do covered[t.key]=true end
     elseif old then
         self.runtime.active=nil
         if self.ClearWaypoint then self:ClearWaypoint() end
+        if previous then zone=previous.mapID end
         if not self.char.settings.autoAdvance then self.runtime.running=false end
     end
-    while true do
-        local best,bestScore,bestTargets
+    if not cursor then
+        -- Never choose an arbitrary high-coverage raid while position is unavailable.
+        self.runtime.route={};self.runtime.waitingForPosition=#candidates>0
+        if #candidates==0 then self.runtime.running=false end
+        return
+    end
+    self.runtime.waitingForPosition=false
+    local function choose(onlyZone)
+        local best,bestTargets,bestContinent,bestDistance
+        local origin=self.Data.zones[cursor.mapID]
         for _,s in ipairs(candidates) do
-            if not self.runtime.skipped[s.id] then
-                local needed,weight={},0
-                for _,t in ipairs(s.targets) do
-                    if not covered[t.key] then needed[#needed+1]=t;weight=weight+(1+(self.TierRank[t.tier] or 1)*.12) end
-                end
+            if not self.runtime.skipped[s.id] and (not onlyZone or s.mapID==onlyZone) then
+                local needed={}
+                for _,t in ipairs(s.targets) do if not covered[t.key] then needed[#needed+1]=t end end
                 if #needed>0 then
-                    local distance=self:Distance(cursor,s)
-                    local cost=distance and (1+distance/2000) or (cursor and 20 or 1)
-                    if cursor and cursor.c and cursor.c~=s.c then cost=cost+30 end
-                    if s.loc.kind=="raid" then cost=cost+1 elseif s.loc.kind=="dungeon" then cost=cost+.35 end
-                    local score=weight/cost
-                    if not bestScore or score>bestScore then best,bestScore,bestTargets=s,score,needed end
+                    local z=self.Data.zones[s.mapID]
+                    local continent=(origin and z and origin.c==z.c) and 0 or 1
+                    local distance=self:Distance(cursor,s) or math.huge
+                    -- No tier/coverage weighting: a distant multi-tome raid cannot
+                    -- outrank a nearby single tome. Across continents there is no
+                    -- meaningful Euclidean travel distance, so use a stable order.
+                    if continent==1 then distance=math.huge end
+                    if not best or continent<bestContinent
+                        or (continent==bestContinent and (distance<bestDistance
+                        or (distance==bestDistance and (s.mapID<best.mapID
+                        or (s.mapID==best.mapID and s.id<best.id))))) then
+                        best,bestTargets,bestContinent,bestDistance=s,needed,continent,distance
+                    end
                 end
             end
         end
+        return best,bestTargets
+    end
+    while true do
+        local best,targets
+        if zone then best,targets=choose(zone) end
+        if not best then best,targets=choose(nil) end
         if not best then break end
-        local stop={id=best.id,loc=best.loc,targets=bestTargets,targetLocs=best.targetLocs,mapID=best.mapID,x=best.x,y=best.y,c=best.c}
-        r[#r+1]=stop;cursor=stop
-        for _,t in ipairs(bestTargets) do covered[t.key]=true end
+        local stop={id=best.id,loc=best.loc,targets=targets,targetLocs=best.targetLocs,
+            mapID=best.mapID,x=best.x,y=best.y,c=best.c}
+        r[#r+1]=stop;cursor=stop;zone=stop.mapID
+        for _,t in ipairs(targets) do covered[t.key]=true end
     end
     self.runtime.route=r
     if self.runtime.running and not self.runtime.active and r[1] then
-        self.runtime.active=r[1].id
+        self.runtime.active=r[1].id;self.runtime.routeZone=r[1].mapID
         if self.SetWaypoint then self:SetWaypoint(r[1]) end
     elseif self.runtime.running and #r==0 then
-        self.runtime.running=false
+        self.runtime.running=false;self.runtime.routeZone=nil
         if self.ClearWaypoint then self:ClearWaypoint() end
     end
 end
@@ -132,24 +163,50 @@ function A:BestLocation(t)
     return locations[1]
 end
 function A:StartRoute()
-    if self.SamplePosition then self:SamplePosition() end
-    self.runtime.running=true;self:Refresh()
-    if not self:ActiveStop() then self:Print("No routable stops. Check source details, instance filters, or record your own location.") end
+    if not self:GetBuild() then self:Print("Import a build first.");return end
+    self.runtime.running=true
+    if WorldMapFrame and WorldMapFrame:IsShown() and not self:ActiveStop() then self.runtime.pendingReplan=true end
+    self:ScanCollection()
+    if self.runtime.waitingForPosition then
+        self:Print("Waiting for your position. Close the world map and stand in a mapped outdoor zone.")
+    elseif not self:ActiveStop() then self:Print("No routable stops. Check source details, instance filters, or record your own location.") end
 end
 function A:PauseRoute()
-    self.runtime.running=false;self.runtime.active=nil
+    self.runtime.running=false;self.runtime.active=nil;self.runtime.routeZone=nil;self.runtime.pendingReplan=nil
     if self.ClearWaypoint then self:ClearWaypoint() end;self:Refresh()
 end
 function A:SkipStop()
     local s=self:ActiveStop() or self.runtime.route[1]
-    if s then self.runtime.skipped[s.id]=true end
+    if s then self.runtime.skipped[s.id]=true;self.runtime.routeZone=s.mapID end
     self.runtime.active=nil;self.runtime.running=true
     if self.ClearWaypoint then self:ClearWaypoint() end;self:Refresh()
 end
 function A:Replan()
-    self.runtime.skipped={};self.runtime.active=nil
+    if not self:GetBuild() then self:Print("Import a build first.");return end
+    self.runtime.skipped={};self.runtime.active=nil;self.runtime.routeZone=nil
+    self.runtime.running=true
+    self.runtime.pendingReplan=WorldMapFrame and WorldMapFrame:IsShown() or nil
     if self.ClearWaypoint then self:ClearWaypoint() end
-    if self.SamplePosition then self:SamplePosition() end;self:Refresh()
+    self:BuildPerkIndex();self:ScanCollection()
+    if self.runtime.waitingForPosition then self:Print("Close the world map to replan from your current outdoor position.") end
+end
+-- Reset only overrides for the active build; never delete a build or real unlocks.
+function A:ResetBuild(expectedID)
+    local build=self:GetBuild()
+    if not build or (expectedID and build.id~=expectedID) then return nil,"The active build changed. Open Reset build again." end
+    for _,t in ipairs(build.targets) do self.char.manual[t.key]=nil end
+    self:BuildPerkIndex();self:IndexTargets()
+    for _,t in ipairs(build.targets) do self.char.manual[t.key]=nil end
+    self.runtime.skipped={};self.runtime.active=nil;self.runtime.routeZone=nil
+    self.runtime.running=false;self.runtime.pendingReplan=nil;self.runtime.selected=nil
+    self.runtime.mapLocation=nil;self.runtime.search="";self.runtime.scroll=0
+    if self.ClearWaypoint then self:ClearWaypoint() end
+    if self.UI and self.UI.search then self.UI.search:SetText("") end
+    if self.mapPins then for _,pin in ipairs(self.mapPins) do pin:Hide() end end
+    self:ScanCollection()
+    if self.UI and self.UI.details then self.UI.details:Hide() end
+    self:Print("Build reset. Manual ticks and skipped stops cleared; learned echoes and bags rescanned. Click Start route when ready.")
+    return true
 end
 function A:NavigateLocation(t,loc)
     if not self:LocationUsable(loc) then self:ShowLocation(t,loc);return end
@@ -159,6 +216,7 @@ function A:NavigateLocation(t,loc)
         self:ShowLocation(t,loc);self:Print("This location is not an outstanding enabled farm stop.");return
     end
     self.runtime.skipped[s.id]=nil;self.runtime.active=s.id;self.runtime.running=true
+    self.runtime.routeZone=s.mapID;self.runtime.pendingReplan=nil
     self:SetWaypoint(s);self:Refresh()
 end
 function A:RecordLocation(t)
