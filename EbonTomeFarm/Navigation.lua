@@ -127,6 +127,7 @@ function A:UpdateNavigation()
     if not self.runtime.running or not stop or not self.char.settings.show then self.arrow:Hide();return end
     self.arrow:Show();self.arrow.title:SetText(stop.loc.place)
     if WorldMapFrame and WorldMapFrame:IsShown() then self.arrow.icon:Hide();self.arrow.info:SetText("Close the map for live direction");return end
+    if IsInInstance and IsInInstance() then self.arrow.icon:Hide();self.arrow.info:SetText("Inside instance - consult the boss / mob list");return end
     local p=self.runtime.position
     local angle,distance
     if p then angle,distance=self:Bearing(p,stop,GetPlayerFacing and GetPlayerFacing() or 0) end
