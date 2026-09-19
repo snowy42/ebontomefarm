@@ -1,0 +1,97 @@
+--- a/EbonTomeFarm/Import.lua
++++ b/EbonTomeFarm/Import.lua
+@@ -112,14 +112,14 @@
+     end
+     if #out==0 then return nil,"No wanted echoes found. F-tier / pool entries are not farming targets." end
+     local title=type(data.title)=="string" and U.clean(data.title) or "Imported build"
+-    return {title=U.trim(title):sub(1,100),class=data.class,targets=out,sourceTargets=U.copy(out),warnings=warnings,format="EbonholdHub"}
++    title=U.trim(title);if title=="" then title="Imported build" end
++    return {title=title:sub(1,100),class=data.class,targets=out,sourceTargets=U.copy(out),warnings=warnings,format="EbonholdHub"}
+ end
+ function A:ParseImport(text)
+     text=U.trim(text)
+     if #text>524288 then return nil,"Import exceeds 512 KiB." end
+     if text=="" then return nil,"Paste a Hub export, EBH1/EWL1 loadout, or one echo name per line." end
+     if text:match("^https?://") then return nil,"Paste the build's Export code, not its page URL. WoW addons cannot fetch websites." end
+-    local version=text:match("^(E[WB][LH]%d+):") -- accepted versions are checked explicitly below
+     if text:match("^EBH%d+:") or text:match("^EWL%d+:") then
+         local out,title,class={},nil,nil
+         if text:match("^EBH1:") then
+@@ -149,16 +149,20 @@
+     local payload=text
+     if text:sub(1,1)~="{" and text:sub(1,1)~="[" then
+         local decoded,err=A.Codec.Base64Decode(text)
+-        if decoded then payload=decoded
++        -- Plain names can be syntactically valid Base64. Only a JSON payload
++        -- selects the export reader; otherwise keep the name-list fallback.
++        local decodedJSON=decoded and U.trim(decoded)
++        if decodedJSON and (decodedJSON:sub(1,1)=="{" or decodedJSON:sub(1,1)=="[") then payload=decodedJSON
+         elseif text:find("\n",1,true) or self.tomesByKey[U.key(text)] then
+             local out={};for line in text:gmatch("[^\r\n]+") do
+                 line=U.trim(line:gsub("^%s*[%-%*]%s+",""));if line~="" then
+                     if #out>=512 then return nil,"Name list exceeds 512 entries." end
++                    if #line>200 then return nil,"An echo name exceeds 200 characters." end
+                     out[#out+1]={name=line,tier="B"} end
+             end
+             if #out>512 then return nil,"Name list exceeds 512 entries." end
+             return {title="Tome wishlist",targets=out,sourceTargets=U.copy(out),format="Names"}
+-        else return nil,err end
++        else return nil,err or "Expected a Base64-encoded JSON build or one echo name per line." end
+     end
+     local data,err=A.Codec.JSONDecode(payload)
+     if not data then return nil,"Cannot read export: "..tostring(err) end
+--- a/EbonTomeFarm/Navigation.lua
++++ b/EbonTomeFarm/Navigation.lua
+@@ -64,7 +64,9 @@
+     if WorldMapFrame then
+         if ShowUIPanel then ShowUIPanel(WorldMapFrame) else WorldMapFrame:Show() end
+     end
+-    if SetMapByID then SetMapByID(loc.mapID)
++    -- Original 3.3.5 GetCurrentMapAreaID returns the DBC ID plus one.
++    -- SetMapByID takes the DBC ID itself; Questie also applies this offset.
++    if SetMapByID then SetMapByID(loc.mapID-1)
+     elseif self.mapCZ and self.mapCZ[loc.mapID] then
+         local cz=self.mapCZ[loc.mapID];SetMapZoom(cz.c,cz.z)
+     end
+--- a/tests/wow_mock.lua
++++ b/tests/wow_mock.lua
+@@ -153,7 +153,7 @@
+ function GetCurrentMapZone()for i,z in ipairs(zones(GetCurrentMapContinent()))do if z.id==M.map then return i end end;return 0 end
+ function GetCurrentMapDungeonLevel()return M.level end
+ function SetDungeonMapLevel(l)M.level=l end
+-function SetMapByID(mid)M.map=mid;M.level=0;M.mapSwitches=M.mapSwitches+1 end
++function SetMapByID(mid)M.lastSetMapID=mid;M.map=mid+1;M.level=0;M.mapSwitches=M.mapSwitches+1 end
+ function SetMapToCurrentZone()M.map=M.player.mapID;M.mapSwitches=M.mapSwitches+1 end
+ function GetPlayerMapPosition()if M.map==M.player.mapID then return M.player.x,M.player.y end;return 0,0 end
+ function GetPlayerFacing()return M.facing end
+--- a/tests/test.lua
++++ b/tests/test.lua
+@@ -186,4 +186,28 @@
+     reset();assert(A:Import("Adaptive Power\nArcane Cadence"));A.char.settings.show=true;A:StartRoute();M.inside=true
+     A:SamplePosition();A:UpdateNavigation();eq(A.arrow.icon:IsShown(),false);assert(A.arrow.info:GetText():find("Inside instance",1,true));M.inside=false
+ end)
++test("every known single echo name bypasses false Base64 detection",function()
++    reset()
++    for _,t in ipairs(A.Data.tomes)do
++        local b,err=A:ParseImport(t.name);assert(b,t.name..": "..tostring(err))
++        eq(#b.targets,1);eq(b.targets[1].name,t.name)
++    end
++end)
++test("wrapped Base64 remains valid and names have bounded lengths",function()
++    local code=A.Codec.Base64Encode('{"title":"  ","echoTiers":{"Arcane Hazard|3":"S"}}')
++    code=code:gsub("(........)","%1\n")
++    local b=assert(A:ParseImport(code));eq(b.title,"Imported build");eq(#b.targets,1)
++    local names=assert(A:ParseImport("Arcane Hazard\nArmor Mastery"));eq(#names.targets,2)
++    eq(A:ParseImport(string.rep("X",201).."\nAdaptive Power"),nil)
++end)
++test("native map setter receives DBC ID, getter returns ID plus one",function()
++    reset();local b=assert(A:Import("Adaptive Power"));local t=b.targets[1];local loc=A:BestLocation(t)
++    A:ShowLocation(t,loc);eq(M.lastSetMapID,loc.mapID-1);eq(GetCurrentMapAreaID(),loc.mapID)
++    for _,source in ipairs(A.Data.locations)do
++        if source.mapID then
++            A:ShowLocation(A:ResolveTarget({name=A.tomesByID[source.tomeID].name}),source)
++            eq(M.lastSetMapID,source.mapID-1);eq(GetCurrentMapAreaID(),source.mapID)
++        end
++    end
++end)
+ print(string.format("\n%d tests passed under %s",passed,_VERSION))
