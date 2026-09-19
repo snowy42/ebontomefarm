@@ -1,0 +1,437 @@
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index 5474651..3c390d4 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -21,3 +21,3 @@ jobs:
+         run: find EbonTomeFarm tests -name '*.lua' -print0 | xargs -0 -n1 luac5.1 -p
+-      - name: Run 40 addon regression tests
++      - name: Run addon regression tests
+         run: lua5.1 tests/test.lua
+diff --git a/EbonTomeFarm/Core.lua b/EbonTomeFarm/Core.lua
+index c26da64..c4133cd 100644
+--- a/EbonTomeFarm/Core.lua
++++ b/EbonTomeFarm/Core.lua
+@@ -2,3 +2,3 @@
+ -- All mutable collection state is character-scoped. Imported builds are account-scoped.
+-EbonTomeFarm = { VERSION = "1.0.0", SCHEMA = 1 }
++EbonTomeFarm = { VERSION = "1.0.1", SCHEMA = 1 }
+ local A = EbonTomeFarm
+diff --git a/EbonTomeFarm/EbonTomeFarm.toc b/EbonTomeFarm/EbonTomeFarm.toc
+index f7720fc..2fbb353 100644
+--- a/EbonTomeFarm/EbonTomeFarm.toc
++++ b/EbonTomeFarm/EbonTomeFarm.toc
+@@ -4,3 +4,3 @@
+ ## Author: Matthew Snow
+-## Version: 1.0.0
++## Version: 1.0.1
+ ## SavedVariables: EbonTomeFarmDB
+diff --git a/EbonTomeFarm/Navigation.lua b/EbonTomeFarm/Navigation.lua
+index 3151706..c05a6ac 100644
+--- a/EbonTomeFarm/Navigation.lua
++++ b/EbonTomeFarm/Navigation.lua
+@@ -130,2 +130,3 @@ function A:UpdateNavigation()
+     self.arrow:Show();self.arrow.title:SetText(stop.loc.place)
++    self:SetStopTargetLabel(self.arrow.targets,stop)
+     if WorldMapFrame and WorldMapFrame:IsShown() then self.arrow.icon:Hide();self.arrow.info:SetText("Close the map for live direction");return end
+diff --git a/EbonTomeFarm/README.txt b/EbonTomeFarm/README.txt
+index 6be4431..6c934a9 100644
+--- a/EbonTomeFarm/README.txt
++++ b/EbonTomeFarm/README.txt
+@@ -1,2 +1,2 @@
+-EbonTomeFarm 1.0.0 - Project Ebonhold tome farming
++EbonTomeFarm 1.0.1 - Project Ebonhold tome farming
+ ================================================
+@@ -16,2 +16,5 @@ Preview, then Import build. You can instead use From Hub to copy an already
+ saved build from the installed Hub addon. A website page URL is not an export.
++The guide and farm card name what to collect. Hover either for all targets
++and their mobs. Current-farm rows have a gold border and a Farm now label.
++Click the farm card to inspect its tome (or choose one at a shared stop).
+ Click Start to begin the farming itinerary. Click an echo row for the map,
+diff --git a/EbonTomeFarm/UI.lua b/EbonTomeFarm/UI.lua
+index 8218f20..713b5bb 100644
+--- a/EbonTomeFarm/UI.lua
++++ b/EbonTomeFarm/UI.lua
+@@ -224,2 +224,56 @@ function A:ShowSettings()
+ end
++-- Show actual outstanding targets without turning a shared raid into a huge card.
++-- The full list is available in the tooltip and the existing paginated picker.
++function A:SetStopTargetLabel(label,stop)
++    local targets=stop and stop.targets or {}
++    if #targets==0 then label:SetText("");return end
++    local names={};for _,t in ipairs(targets)do names[#names+1]=t.name end
++    local visible=#names
++    repeat
++        local suffix=visible<#names and string.format(" (+%d more)",#names-visible)or""
++        label:SetText("Collect: "..table.concat(names,", ",1,visible)..suffix)
++        if label:GetStringWidth()<=label:GetWidth()then break end
++        if visible==1 then
++            -- Preserve the extra-target count even when the first name is long.
++            -- Remove whole UTF-8 characters, not individual continuation bytes.
++            local name=names[1]
++            repeat
++                local last=#name
++                while last>1 and name:byte(last)>=128 and name:byte(last)<192 do last=last-1 end
++                name=name:sub(1,last-1)
++                label:SetText("Collect: "..name.."..."..suffix)
++            until label:GetStringWidth()<=label:GetWidth()or name==""
++            break
++        end
++        visible=visible-1
++    until false
++end
++function A:ShowStopTooltip(owner,stop)
++    if not stop then return end
++    GameTooltip:SetOwner(owner,"ANCHOR_RIGHT")
++    GameTooltip:AddLine(stop.loc.place,unpack(C.gold))
++    GameTooltip:AddLine("Collect at this stop:",1,1,1)
++    for i,t in ipairs(stop.targets)do
++        if i>10 then GameTooltip:AddLine(string.format("...and %d more. Click the farm card for all targets.",#stop.targets-10),.65,.70,.78,true);break end
++        GameTooltip:AddLine(t.name,unpack(C.green))
++        local loc=stop.targetLocs and stop.targetLocs[t.key]or stop.loc
++        if loc and loc.mobs and #loc.mobs>0 then GameTooltip:AddLine("  "..table.concat(loc.mobs,", "),.65,.70,.78,true)end
++    end
++    GameTooltip:AddLine("Click the farm card: map and farming details",.65,.70,.78,true)
++    GameTooltip:Show()
++end
++function A:OpenStopDetails(stop)
++    if not stop or #stop.targets==0 then return end
++    local function open(t)
++        A:ShowLocation(t,stop.targetLocs and stop.targetLocs[t.key]or stop.loc)
++    end
++    if #stop.targets==1 then open(stop.targets[1]);return end
++    local choices={}
++    for _,t in ipairs(stop.targets)do choices[#choices+1]={title=t.name,key=t.key}end
++    self:Pick("Tomes at this farming stop",choices,function(item)
++        -- Collection may change while the picker is open. Resolve the target
++        -- from the current build so switching/deleting builds cannot misroute.
++        local t=A:TargetByKey(item.key);if t then open(t)end
++    end)
++end
+ function A:ResetPositions()
+@@ -243,15 +297,18 @@ function A:CreateUI()
+     local body=CreateFrame("Frame",nil,f);UI.body=body;body:SetPoint("TOPLEFT",f,"TOPLEFT",12,-123);body:SetPoint("BOTTOMRIGHT",f,"BOTTOMRIGHT",-12,8)
+-    local card=CreateFrame("Button",nil,body);UI.card=card;skin(card,.085,.085,.12,1);card:SetPoint("TOPLEFT",body,"TOPLEFT");card:SetPoint("TOPRIGHT",body,"TOPRIGHT");card:SetHeight(62)
+-    card.caption=text(card,"NEXT FARM",9,10,-8,290,C.purple);card.title=text(card,"Import a build to get started",12,10,-23,290);card.info=text(card,"",10,10,-42,290,C.muted)
+-    card.title:SetWordWrap(false);card.info:SetWordWrap(false)
+-    card:SetScript("OnClick",function()local s=A:ActiveStop()or A.runtime.route[1];if s then A:ShowLocation(s.targets[1],s.loc)end end)
+-    UI.start=button(body,"Start route",92,25,function()if A.runtime.running then A:PauseRoute()else A:StartRoute()end end);UI.start:SetPoint("TOPLEFT",body,"TOPLEFT",0,-73)
++    local card=CreateFrame("Button",nil,body);UI.card=card;skin(card,.085,.085,.12,1);card:SetPoint("TOPLEFT",body,"TOPLEFT");card:SetPoint("TOPRIGHT",body,"TOPRIGHT");card:SetHeight(82)
++    card.caption=text(card,"NEXT FARM",9,10,-8,290,C.purple);card.title=text(card,"Import a build to get started",12,10,-23,290);card.info=text(card,"",10,10,-62,290,C.muted)
++    card.targets=text(card,"",11,10,-43,290,C.green)
++    card.title:SetWordWrap(false);card.info:SetWordWrap(false);card.targets:SetWordWrap(false)
++    card:SetScript("OnClick",function()A:OpenStopDetails(A:ActiveStop()or A.runtime.route[1])end)
++    card:SetScript("OnEnter",function(self)A:ShowStopTooltip(self,A:ActiveStop()or A.runtime.route[1])end)
++    card:SetScript("OnLeave",function()GameTooltip:Hide()end)
++    UI.start=button(body,"Start route",92,25,function()if A.runtime.running then A:PauseRoute()else A:StartRoute()end end);UI.start:SetPoint("TOPLEFT",card,"BOTTOMLEFT",0,-11)
+     UI.next=button(body,"Skip",58,25,function()A:SkipStop()end);UI.next:SetPoint("LEFT",UI.start,"RIGHT",6,0);tip(UI.next,"Defer this stop","Keeps its tomes on your checklist. Replan restores deferred stops.")
+     UI.replan=button(body,"Replan",66,25,function()A:Replan()end);UI.replan:SetPoint("LEFT",UI.next,"RIGHT",6,0)
+-    UI.settingsButton=button(body,"Settings",83,25,function()A:ShowSettings()end);UI.settingsButton:SetPoint("TOPRIGHT",body,"TOPRIGHT",0,-73)
+-    UI.search=edit(body,206,25,false);UI.search:SetPoint("TOPLEFT",body,"TOPLEFT",0,-108)
++    UI.settingsButton=button(body,"Settings",83,25,function()A:ShowSettings()end);UI.settingsButton:SetPoint("TOPRIGHT",card,"BOTTOMRIGHT",0,-11)
++    UI.search=edit(body,206,25,false);UI.search:SetPoint("TOPLEFT",UI.start,"BOTTOMLEFT",0,-10)
+     UI.search:SetScript("OnTextChanged",function(self)A.runtime.search=self:GetText();A.runtime.scroll=0;A:RenderRows()end)
+     UI.searchHint=text(UI.search,"Search echoes or zones...",10,8,-7,194,C.muted)
+-    UI.filter=button(body,"Needed",105,25,function()A.char.settings.hideDone=not A.char.settings.hideDone;A.runtime.scroll=0;A:Render()end);UI.filter:SetPoint("TOPRIGHT",body,"TOPRIGHT",0,-108)
+-    local list=CreateFrame("Frame",nil,body);UI.list=list;list:SetPoint("TOPLEFT",body,"TOPLEFT",0,-146);list:SetPoint("BOTTOMRIGHT",body,"BOTTOMRIGHT",0,27);list:EnableMouseWheel(true)
++    UI.filter=button(body,"Needed",105,25,function()A.char.settings.hideDone=not A.char.settings.hideDone;A.runtime.scroll=0;A:Render()end);UI.filter:SetPoint("TOPRIGHT",UI.settingsButton,"BOTTOMRIGHT",0,-10)
++    local list=CreateFrame("Frame",nil,body);UI.list=list;list:SetPoint("TOPLEFT",UI.search,"BOTTOMLEFT",0,-13);list:SetPoint("BOTTOMRIGHT",body,"BOTTOMRIGHT",0,27);list:EnableMouseWheel(true)
+     list:SetScript("OnMouseWheel",function(_,d)A.runtime.scroll=math.max(0,(A.runtime.scroll or 0)-d*2);A:RenderRows()end)
+@@ -265,5 +322,9 @@ function A:CreateUI()
+     f:SetScript("OnSizeChanged",function()if A.db and not UI.sizing then A:LayoutRows()end end)
+-    self.arrow=CreateFrame("Frame","EbonTomeFarmArrow",UIParent);local arrow=self.arrow;size(arrow,316,60);skin(arrow,.045,.055,.075,.90);arrow:SetFrameStrata("MEDIUM");movable(arrow,"arrowPosition");position(arrow,"arrowPosition","TOP",0,-135)
++    self.arrow=CreateFrame("Frame","EbonTomeFarmArrow",UIParent);local arrow=self.arrow;size(arrow,316,80);skin(arrow,.045,.055,.075,.90);arrow:SetFrameStrata("MEDIUM");movable(arrow,"arrowPosition");position(arrow,"arrowPosition","TOP",0,-135)
+     arrow.icon=arrow:CreateTexture(nil,"OVERLAY");size(arrow.icon,44,44);arrow.icon:SetPoint("LEFT",arrow,"LEFT",8,0);arrow.icon:SetTexture("Interface\\Minimap\\MinimapArrow")
+-    arrow.title=text(arrow,"",12,62,-13,244,C.gold);arrow.info=text(arrow,"",10,62,-34,244,C.muted);arrow.title:SetWordWrap(false);arrow.info:SetWordWrap(false);arrow:Hide()
++    arrow.title=text(arrow,"",12,62,-12,244,C.gold)
++    arrow.targets=text(arrow,"",11,62,-33,244,C.green);arrow.info=text(arrow,"",10,62,-55,244,C.muted)
++    arrow.title:SetWordWrap(false);arrow.targets:SetWordWrap(false);arrow.info:SetWordWrap(false)
++    arrow:SetScript("OnEnter",function(self)A:ShowStopTooltip(self,A:ActiveStop())end)
++    arrow:SetScript("OnLeave",function()GameTooltip:Hide()end);arrow:Hide()
+     if Minimap then
+@@ -280,4 +341,5 @@ function A:LayoutRows()
+     UI.build:SetWidth(width-74);UI.build.label:SetWidth(width-94)
+-    UI.card.title:SetWidth(width-20);UI.card.info:SetWidth(width-20);UI.search:SetWidth(width-116);UI.searchHint:SetWidth(width-132)
++    UI.card.title:SetWidth(width-20);UI.card.info:SetWidth(width-20);UI.card.targets:SetWidth(width-20);UI.search:SetWidth(width-116);UI.searchHint:SetWidth(width-132)
+     UI.progressLabel:SetWidth(width);UI.footer:SetWidth(width-6)
++    self:SetStopTargetLabel(UI.card.targets,self:ActiveStop()or self.runtime.route[1])
+     local count=math.max(1,math.floor(UI.list:GetHeight()/44))
+@@ -301,3 +363,6 @@ function A:LayoutRows()
+             end)
+-            row:SetScript("OnLeave",function(self)self:SetBackdropBorderColor(.22,.25,.31,1);GameTooltip:Hide()end)
++            row:SetScript("OnLeave",function(self)
++                if self.activeFarm then self:SetBackdropBorderColor(unpack(C.gold))else self:SetBackdropBorderColor(.22,.25,.31,1)end
++                GameTooltip:Hide()
++            end)
+         end
+@@ -312,2 +377,4 @@ function A:RenderRows()
+     shown(UI.searchHint,search=="")
++    local activeKeys={};local active=self:ActiveStop()
++    for _,t in ipairs(active and active.targets or {})do activeKeys[t.key]=true end
+     local rank={};for i,s in ipairs(self.runtime.route)do for _,t in ipairs(s.targets)do if not rank[t.key]then rank[t.key]=i end end end
+@@ -331,5 +398,8 @@ function A:RenderRows()
+             row.name:SetTextColor(unpack(self:IsDone(t)and C.green or C.text))
+-            row.sub:SetText(self:IsDone(t)and label or loc and((loc.x and ""or "No pin: ")..(loc.zone or loc.place))or "Unmatched echo - click for options")
+-            row:SetBackdropBorderColor(.22,.25,.31,1);row:Show()
+-        else row.target=nil;row:Hide()end
++            row.activeFarm=activeKeys[t.key]or false
++            local subtitle=self:IsDone(t)and label or loc and((loc.x and ""or "No pin: ")..(loc.zone or loc.place))or "Unmatched echo - click for options"
++            row.sub:SetText((row.activeFarm and "Farm now: "or "")..subtitle)
++            if row.activeFarm then row:SetBackdropBorderColor(unpack(C.gold))else row:SetBackdropBorderColor(.22,.25,.31,1)end
++            row:Show()
++        else row.target=nil;row.activeFarm=false;row:Hide()end
+     end
+diff --git a/PROJECT_HANDOVER.md b/PROJECT_HANDOVER.md
+index 7e372ca..c1fa088 100644
+--- a/PROJECT_HANDOVER.md
++++ b/PROJECT_HANDOVER.md
+@@ -9,3 +9,3 @@ so another chat can resume without any temporary files.
+ 
+-Version **1.0.0**, targeting original WoW **3.3.5a / Interface 30300 / Lua 5.1**.
++Version **1.0.1**, targeting original WoW **3.3.5a / Interface 30300 / Lua 5.1**.
+ The addon implements all five requested feature areas: Hub build import,
+@@ -17,3 +17,3 @@ manual overrides, personal recorded locations, and account-wide saved builds.
+ 
+-**40 Lua addon/mock tests and 8 Python distribution/parser tests pass locally.**
++**48 Lua addon/mock tests and 8 Python distribution/parser tests pass locally.**
+ The data builder reproduced the committed Data.lua byte-for-byte from pinned
+@@ -25,5 +25,7 @@ Releases to confirm the latest publication result.
+ 
+-**No live Ebonhold client was available.** The first release is explicitly a
+-prerelease until `docs/TESTING.md` is exercised in game. Do not tell Matthew it
+-was tested in his client, or that community drops are confirmed. There is no
++Matthew supplied an in-game 1.0.0 screenshot confirming initial load, imported
++build display and active navigation. He found the guide omitted tome names.
++Version 1.0.1 fixes that. This patch has not yet been tested in his client;
++releases remain prereleases until `docs/TESTING.md` is exercised in game.
++Do not claim all integrations or community drops are confirmed. There is no
+ unfinished core feature stub; remaining acceptance work is actual-client and
+@@ -68,3 +70,3 @@ Research artifacts expire and are NOT required by the addon or normal tests.
+ - tests/wow_mock.lua: deliberately restricted original-client mock.
+-- tests/test.lua: 40 addon tests. tests/test_tools.py: 8 build/parser tests.
++- tests/test.lua: 48 addon tests. tests/test_tools.py: 8 build/parser tests.
+ - tools/build_data.py / fetch_data.py: pinned literal-data generation.
+@@ -165 +167,18 @@ release tooling. The repository and release assets are the durable records;
+ no `/mnt/data` path is needed for continuation.
++
++## 1.0.1: guide identifies the farming targets
++
++Matthew's first live screenshot showed the guide pointing to The Grinding
++Quarry with only a count. That source is Armor Mastery in the bundled data.
++The current-farm card and floating guide now both display a Collect line.
++Shared camps list names that fit, plus (+N more). Hover shows up to ten names
++and per-tome mobs, with a remainder notice; clicking the farm card opens a
++single tome or the existing paginated picker for all targets. It uses each
++target's source from targetLocs, not the first mob/boss for every tome.
++Active-farm rows have a persistent gold border and Farm now subtitle.
++
++The card and arrow are 20px taller; card controls use relative anchors. No
++saved-variable schema change, no data-source changes, and no new dependencies.
++Updating the addon folder preserves builds and collection. Added eight
++regressions: 48 Lua tests plus the unchanged eight Python tests now pass.
++The existing TomTom title is unchanged; this patch addresses ETF's own guide.
+diff --git a/README.md b/README.md
+index 05f4886..7e7a0f9 100644
+--- a/README.md
++++ b/README.md
+@@ -5,5 +5,6 @@ For the **original 3.3.5a client (Interface 30300, Lua 5.1)**, not Retail WoW.
+ 
+-**Version 1.0.0 is an installable first build. Automated tests pass; live Ebonhold
+-validation has not yet been performed.** The initial GitHub release is marked
+-as a prerelease pending that validation.
++**Version 1.0.1 names the tomes to collect in both the guide and farm card.**
++Matthew has confirmed the initial 1.0.0 UI/import/route display working in
++Ebonhold. This update passes automated tests; full live-client acceptance
++is still pending, so releases remain marked prerelease.
+ 
+@@ -11,3 +12,3 @@ as a prerelease pending that validation.
+ 
+-Download `EbonTomeFarm-1.0.0.zip` from [Releases](https://github.com/snowy42/ebontomefarm/releases).
++Download `EbonTomeFarm-1.0.1.zip` from [Releases](https://github.com/snowy42/ebontomefarm/releases).
+ Close the game, extract it into your client's `Interface\AddOns` directory,
+@@ -39,2 +40,8 @@ No Python, external application, or online data download is needed in game.
+ 
++The guide and farm card display **Collect: <echo names>**. Long shared-stop
++lists show **(+N more)**; hover either display for names and mob descriptions.
++Click the farm card to open one tome or choose from all targets at a shared
++stop. Current-farm checklist rows have a gold border and **Farm now** label.
++Names update as tomes are obtained and remain visible on arrival.
++
+ Drag the tracker or direction card to move it. Resize the tracker from its
+@@ -99,3 +106,3 @@ python3 tools/package.py
+ 
+-There are **40 Lua addon/mock tests and 8 Python distribution/parser tests**.
++There are **48 Lua addon/mock tests and 8 Python distribution/parser tests**.
+ The deterministic packager validates TOC order, required files, licences and
+diff --git a/docs/RELEASE_NOTES.md b/docs/RELEASE_NOTES.md
+index bb76e2c..e7d8883 100644
+--- a/docs/RELEASE_NOTES.md
++++ b/docs/RELEASE_NOTES.md
+@@ -1,27 +1,23 @@
+-# EbonTomeFarm 1.0.0
++# EbonTomeFarm 1.0.1
+ 
+-First installable build for Project Ebonhold on the original WoW 3.3.5a client.
++The floating guide and current-farm card now say **Collect: <echo names>**
++instead of making you infer the target from a count. At shared stops, names
++that fit are shown with a (+N more) indicator. Hover either display for the
++target names and per-tome mobs. Click the farm card to open one target, or
++choose from all targets in the shared-stop picker.
+ 
+-Import EbonholdHub Base64/JSON builds, installed Hub builds, EBH1/EWL1 journal
+-strings, or known echo names. Track wanted tome families in a movable,
+-resizable, searchable checklist with source details and native map pins.
+-Group farming camps and instance entrances into an itinerary, with a built-in
+-direction card and optional legacy TomTom. Permanent unlocks, bag tomes,
+-manual overrides and per-character personal locations are supported.
++Current-farm checklist rows have a gold border and a **Farm now** label.
++Names update after collection and remain visible while at the camp, viewing
++the map, or inside an instance. The two cards are 20px taller; the main
++tracker stays resizable and its controls remain correctly anchored.
+ 
+-Includes 128 tome families and 173 community sources. 96 families have a
+-native pin; 32 have no reliable fixed pin and remain visible with available
+-guidance. Community drops, inferred NPC matches and instance entrances are
+-labelled; routing is straight-line/proximity based, not terrain-aware.
++**Update:** close the game, replace Interface\AddOns\EbonTomeFarm with this
++ZIP's EbonTomeFarm folder, and restart. Imported builds and collection marks
++are preserved in saved variables. No reimport or data reset is needed.
+ 
+-Validation: 40 real-Lua-5.1/mock tests, 8 Python distribution/parser tests,
+-Lua syntax checks, deterministic ZIP/manifest verification, and pinned-data
+-rebuild. The original 3.3.5 map getter/setter offset is explicitly tested.
++Validation: **48 Lua 5.1/mock tests and eight Python tests passed**, including
++eight new target-display/layout regressions and visual mock-layout review.
++Matthew's first in-game 1.0.0 screenshot confirms initial loading/display.
++**This 1.0.1 patch still needs in-client verification; release is a prerelease.**
+ 
+-**Prerelease: actual in-game Ebonhold validation is still required.**
+-All requested feature areas are implemented; no live-client result is claimed.
+-
+-Install the EbonTomeFarm folder into Interface\AddOns and restart the client.
+-Open /etf, Import, Preview, Import build, then Start. Full instructions and
+-licence notices are included in the ZIP. The repository's PROJECT_HANDOVER.md
+-contains the continuation guide. The ZIP and manifest have SHA-256 checksums.
++Community source data, routing algorithm, and TomTom titles are unchanged.
+diff --git a/docs/TESTING.md b/docs/TESTING.md
+index 29d9861..0d5a21d 100644
+--- a/docs/TESTING.md
++++ b/docs/TESTING.md
+@@ -4,3 +4,3 @@
+ 
+-`lua5.1 tests/test.lua` runs 40 tests in the real Lua 5.1 interpreter against a
++`lua5.1 tests/test.lua` runs 48 tests in the real Lua 5.1 interpreter against a
+ restricted original-client API mock. It loads every addon module in TOC order.
+@@ -24,6 +24,17 @@ constitute execution inside the actual game client.
+ 
++## 1.0.1 target-label regressions
++
++Eight additional tests cover named single/shared farms, fitting long names
++with an explicit remainder count, complete hover lists, per-target source
++selection, collection refresh, names during arrival/map/instance states,
++active-row highlighting, and non-overlapping layouts at supported sizes.
++A render of the actual mock frame geometry was also visually inspected with
++substitute fonts/icons. It is not an in-game capture.
++
+ ## Required live validation
+ 
+-The initial release is marked prerelease until this is performed. No live
+-Ebonhold client/server was available during development.
++Releases remain prereleases until this is performed. Matthew supplied an
++in-game screenshot of 1.0.0 displaying an imported build and farming route.
++That confirms initial loading/display, not every integration or source.
++The 1.0.1 target-label update has not yet been verified in the actual client.
+ 
+diff --git a/tests/test.lua b/tests/test.lua
+index 1083598..459533a 100644
+--- a/tests/test.lua
++++ b/tests/test.lua
+@@ -212,2 +212,89 @@ test("native map setter receives DBC ID, getter returns ID plus one",function()
+ end)
++test("single-target guide and farm card identify Armor Mastery",function()
++    reset();assert(A:Import("Armor Mastery"));A.char.settings.show=true;A:StartRoute()
++    eq(A:ActiveStop().loc.place,"The Grinding Quarry - Blackrock Mountain")
++    eq(A.UI.card.targets:GetText(),"Collect: Armor Mastery")
++    eq(A.arrow.targets:GetText(),"Collect: Armor Mastery")
++    M.Click(A.UI.card);eq(A.UI.details.target.key,"armormastery");WorldMapFrame:Hide()
++end)
++test("shared farms show bounded names and the full target tooltip",function()
++    reset();assert(A:Import("Adaptive Power\nArcane Cadence"));A:StartRoute();local stop=A:ActiveStop()
++    eq(#stop.targets,2)
++    assert(A.UI.card.targets:GetText():find("Adaptive Power",1,true))
++    assert(A.arrow.targets:GetText():find("Adaptive Power",1,true))
++    assert(A.arrow.targets:GetStringWidth()<=A.arrow.targets:GetWidth())
++    assert(A.arrow.targets:GetText():find("Arcane Cadence",1,true))
++    A.arrow.targets:SetWidth(190);A:SetStopTargetLabel(A.arrow.targets,stop)
++    assert(A.arrow.targets:GetText():find("+1 more",1,true))
++    A.arrow.targets:SetWidth(244);A:SetStopTargetLabel(A.arrow.targets,stop)
++    for _,frame in ipairs({A.UI.card,A.arrow})do
++        GameTooltip.lines={};frame.scripts.OnEnter(frame)
++        local tooltip=table.concat(GameTooltip.lines,"\n")
++        for _,t in ipairs(stop.targets)do assert(tooltip:find(t.name,1,true))end
++        assert(tooltip:find("Collect at this stop:",1,true))
++        frame.scripts.OnLeave(frame);eq(GameTooltip:IsShown(),false)
++    end
++end)
++test("shared-farm picker opens each tome's own source details",function()
++    reset();assert(A:Import("Adaptive Power\nArcane Cadence"));A:StartRoute();local stop=A:ActiveStop()
++    M.Click(A.UI.card);local picker=A.UI.picker;eq(#picker.items,2)
++    local expected=picker.items[2].key;M.Click(picker.rows[2])
++    eq(A.UI.details.target.key,expected)
++    eq(A.UI.details.loc,stop.targetLocs[expected]);WorldMapFrame:Hide()
++end)
++test("collecting part of a shared camp refreshes names without moving on",function()
++    reset();assert(A:Import("Adaptive Power\nArcane Cadence"));A:StartRoute();local id=A:ActiveStop().id
++    A:SetManual("adaptivepower","done")
++    eq(A:ActiveStop().id,id);eq(A.UI.card.targets:GetText(),"Collect: Arcane Cadence")
++    eq(A.arrow.targets:GetText(),"Collect: Arcane Cadence")
++    A:SetManual("arcanecadence","done");eq(A.UI.card.targets:GetText(),"");eq(A.arrow:IsShown(),false)
++end)
++test("target names remain visible on arrival and without live outdoor direction",function()
++    reset();assert(A:Import("Armor Mastery"));A.char.settings.show=true;A:StartRoute();local stop=A:ActiveStop()
++    A.runtime.position={mapID=stop.mapID,x=stop.x,y=stop.y};A:UpdateNavigation()
++    assert(A.arrow.info:GetText():find("Farm here",1,true));eq(A.arrow.targets:GetText(),"Collect: Armor Mastery")
++    WorldMapFrame:Show();A:UpdateNavigation();eq(A.arrow.targets:GetText(),"Collect: Armor Mastery");WorldMapFrame:Hide()
++    M.inside=true;A:UpdateNavigation();eq(A.arrow.targets:GetText(),"Collect: Armor Mastery");M.inside=false
++    A.runtime.position=nil;A:UpdateNavigation();eq(A.arrow.targets:GetText(),"Collect: Armor Mastery")
++end)
++test("only current farm targets stay highlighted including after mouse leave",function()
++    reset();assert(A:Import("Armor Mastery\nBattle Rhythm\nAdaptive Power"));A:StartRoute()
++    local function check()
++        local active=A:ActiveStop();local keys={};for _,t in ipairs(active and active.targets or {})do keys[t.key]=true end
++        for _,row in ipairs(A.UI.rows)do if row.target then
++            eq(row.activeFarm,keys[row.target.key]or false)
++            row.scripts.OnEnter(row);row.scripts.OnLeave(row)
++            eq(row.border[1],row.activeFarm and .84 or .22)
++            eq(row.sub:GetText():find("Farm now: ",1,true)~=nil,row.activeFarm)
++        end end
++    end
++    check();A:SkipStop();check();A:PauseRoute();check()
++end)
++test("farm-card controls and rows do not overlap at supported sizes",function()
++    reset();assert(A:Import("Armor Mastery"));A:StartRoute()
++    local function below(upper,lower)
++        local _,y,_,h=upper:Rect();local _,yy=lower:Rect();assert(yy>=y+h,"Overlapping vertical regions")
++    end
++    for _,dims in ipairs({{344,418},{354,500},{540,680},{600,900}})do
++        A.char.settings.width=dims[1];A.char.settings.height=dims[2];A:Render()
++        below(A.UI.card.title,A.UI.card.targets);below(A.UI.card.targets,A.UI.card.info)
++        below(A.UI.card,A.UI.start);below(A.UI.start,A.UI.search);below(A.UI.search,A.UI.list)
++        below(A.arrow.title,A.arrow.targets);below(A.arrow.targets,A.arrow.info)
++        local _,y,_,h=A.arrow.info:Rect();local _,ay,_,ah=A.arrow:Rect();assert(y+h<=ay+ah)
++        assert(A.UI.visibleRows>=1)
++    end
++    A:ResetPositions()
++end)
++test("many shared targets stay compact without dropping the full picker list",function()
++    reset();local b=assert(A:Import("Adaptive Power\nArcane Cadence"));A:StartRoute()
++    local stop={loc=A:ActiveStop().loc,targets={},targetLocs={}}
++    for i=1,22 do stop.targets[i]={name="A long wanted echo name "..i,key="test"..i}end
++    local before=stop.targets[22].name
++    A:SetStopTargetLabel(A.arrow.targets,stop)
++    assert(A.arrow.targets:GetText():find("+21 more",1,true))
++    GameTooltip.lines={};A:ShowStopTooltip(A.arrow,stop)
++    assert(table.concat(GameTooltip.lines,"\n"):find("12 more",1,true))
++    A:OpenStopDetails(stop);eq(#A.UI.picker.items,22);eq(stop.targets[22].name,before)
++    A.UI.picker:Hide();GameTooltip:Hide()
++end)
+ print(string.format("\n%d tests passed under %s",passed,_VERSION))
