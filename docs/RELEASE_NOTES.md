@@ -1,27 +1,23 @@
-# EbonTomeFarm 1.0.0
+# EbonTomeFarm 1.0.1
 
-First installable build for Project Ebonhold on the original WoW 3.3.5a client.
+The floating guide and current-farm card now say **Collect: <echo names>**
+instead of making you infer the target from a count. At shared stops, names
+that fit are shown with a (+N more) indicator. Hover either display for the
+target names and per-tome mobs. Click the farm card to open one target, or
+choose from all targets in the shared-stop picker.
 
-Import EbonholdHub Base64/JSON builds, installed Hub builds, EBH1/EWL1 journal
-strings, or known echo names. Track wanted tome families in a movable,
-resizable, searchable checklist with source details and native map pins.
-Group farming camps and instance entrances into an itinerary, with a built-in
-direction card and optional legacy TomTom. Permanent unlocks, bag tomes,
-manual overrides and per-character personal locations are supported.
+Current-farm checklist rows have a gold border and a **Farm now** label.
+Names update after collection and remain visible while at the camp, viewing
+the map, or inside an instance. The two cards are 20px taller; the main
+tracker stays resizable and its controls remain correctly anchored.
 
-Includes 128 tome families and 173 community sources. 96 families have a
-native pin; 32 have no reliable fixed pin and remain visible with available
-guidance. Community drops, inferred NPC matches and instance entrances are
-labelled; routing is straight-line/proximity based, not terrain-aware.
+**Update:** close the game, replace Interface\AddOns\EbonTomeFarm with this
+ZIP's EbonTomeFarm folder, and restart. Imported builds and collection marks
+are preserved in saved variables. No reimport or data reset is needed.
 
-Validation: 40 real-Lua-5.1/mock tests, 8 Python distribution/parser tests,
-Lua syntax checks, deterministic ZIP/manifest verification, and pinned-data
-rebuild. The original 3.3.5 map getter/setter offset is explicitly tested.
+Validation: **48 Lua 5.1/mock tests and eight Python tests passed**, including
+eight new target-display/layout regressions and visual mock-layout review.
+Matthew's first in-game 1.0.0 screenshot confirms initial loading/display.
+**This 1.0.1 patch still needs in-client verification; release is a prerelease.**
 
-**Prerelease: actual in-game Ebonhold validation is still required.**
-All requested feature areas are implemented; no live-client result is claimed.
-
-Install the EbonTomeFarm folder into Interface\AddOns and restart the client.
-Open /etf, Import, Preview, Import build, then Start. Full instructions and
-licence notices are included in the ZIP. The repository's PROJECT_HANDOVER.md
-contains the continuation guide. The ZIP and manifest have SHA-256 checksums.
+Community source data, routing algorithm, and TomTom titles are unchanged.

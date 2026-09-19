@@ -7,7 +7,7 @@ so another chat can resume without any temporary files.
 
 ## What is built
 
-Version **1.0.0**, targeting original WoW **3.3.5a / Interface 30300 / Lua 5.1**.
+Version **1.0.1**, targeting original WoW **3.3.5a / Interface 30300 / Lua 5.1**.
 The addon implements all five requested feature areas: Hub build import,
 wanted-echo to tome-source matching, grouped farming itinerary and navigation,
 permanent collection checklist with clickable map/mob/boss details, and a
@@ -15,7 +15,7 @@ compact movable/hideable/scrollable UI. It includes native pins, a built-in
 direction card, optional legacy TomTom, source cycling, search, filtering,
 manual overrides, personal recorded locations, and account-wide saved builds.
 
-**40 Lua addon/mock tests and 8 Python distribution/parser tests pass locally.**
+**48 Lua addon/mock tests and 8 Python distribution/parser tests pass locally.**
 The data builder reproduced the committed Data.lua byte-for-byte from pinned
 inputs. GitHub Actions runs tests and packages exact source/install artifacts.
 `tools/package.py` makes a deterministic 13-file install ZIP with a per-file
@@ -23,9 +23,11 @@ manifest and SHA-256 checksums. The release workflow publishes the same build
 as a durable GitHub release when `release.json` changes; inspect Actions and
 Releases to confirm the latest publication result.
 
-**No live Ebonhold client was available.** The first release is explicitly a
-prerelease until `docs/TESTING.md` is exercised in game. Do not tell Matthew it
-was tested in his client, or that community drops are confirmed. There is no
+Matthew supplied an in-game 1.0.0 screenshot confirming initial load, imported
+build display and active navigation. He found the guide omitted tome names.
+Version 1.0.1 fixes that. This patch has not yet been tested in his client;
+releases remain prereleases until `docs/TESTING.md` is exercised in game.
+Do not claim all integrations or community drops are confirmed. There is no
 unfinished core feature stub; remaining acceptance work is actual-client and
 server-data validation, followed by any fixes that validation reveals.
 
@@ -66,7 +68,7 @@ Research artifacts expire and are NOT required by the addon or normal tests.
 - UI.lua: original slate/gold widgets, tracker, dialogs and settings.
 - Events.lua: load/events, debounced scans, navigation updates and /etf commands.
 - tests/wow_mock.lua: deliberately restricted original-client mock.
-- tests/test.lua: 40 addon tests. tests/test_tools.py: 8 build/parser tests.
+- tests/test.lua: 48 addon tests. tests/test_tools.py: 8 build/parser tests.
 - tools/build_data.py / fetch_data.py: pinned literal-data generation.
 - tools/package.py: TOC/licence validation, reproducible ZIP and checksums.
 
@@ -163,3 +165,20 @@ workflow applied those four files atomically, ran all 40 tests, and removed
 itself. Subsequent commits add distribution tests, licences, documentation and
 release tooling. The repository and release assets are the durable records;
 no `/mnt/data` path is needed for continuation.
+
+## 1.0.1: guide identifies the farming targets
+
+Matthew's first live screenshot showed the guide pointing to The Grinding
+Quarry with only a count. That source is Armor Mastery in the bundled data.
+The current-farm card and floating guide now both display a Collect line.
+Shared camps list names that fit, plus (+N more). Hover shows up to ten names
+and per-tome mobs, with a remainder notice; clicking the farm card opens a
+single tome or the existing paginated picker for all targets. It uses each
+target's source from targetLocs, not the first mob/boss for every tome.
+Active-farm rows have a persistent gold border and Farm now subtitle.
+
+The card and arrow are 20px taller; card controls use relative anchors. No
+saved-variable schema change, no data-source changes, and no new dependencies.
+Updating the addon folder preserves builds and collection. Added eight
+regressions: 48 Lua tests plus the unchanged eight Python tests now pass.
+The existing TomTom title is unchanged; this patch addresses ETF's own guide.

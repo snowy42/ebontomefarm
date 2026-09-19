@@ -1,6 +1,6 @@
 -- EbonTomeFarm: original implementation, MIT.
 -- All mutable collection state is character-scoped. Imported builds are account-scoped.
-EbonTomeFarm = { VERSION = "1.0.0", SCHEMA = 1 }
+EbonTomeFarm = { VERSION = "1.0.1", SCHEMA = 1 }
 local A = EbonTomeFarm
 A.util, A.runtime = {}, { manual = {}, owned = {}, bags = {}, route = {}, skipped = {} }
 local U = A.util

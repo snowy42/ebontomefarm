@@ -1,4 +1,4 @@
-EbonTomeFarm 1.0.0 - Project Ebonhold tome farming
+EbonTomeFarm 1.0.1 - Project Ebonhold tome farming
 ================================================
 Target: original WoW 3.3.5a / Interface 30300 / Lua 5.1.
 
@@ -14,6 +14,9 @@ FIRST USE
 Type /etf. Click Import, paste the EbonholdHub build's Export code, click
 Preview, then Import build. You can instead use From Hub to copy an already
 saved build from the installed Hub addon. A website page URL is not an export.
+The guide and farm card name what to collect. Hover either for all targets
+and their mobs. Current-farm rows have a gold border and a Farm now label.
+Click the farm card to inspect its tome (or choose one at a shared stop).
 Click Start to begin the farming itinerary. Click an echo row for the map,
 mobs/bosses, source warnings and alternate sources. Use Skip to defer a stop;
 Replan restores deferred stops. Arrival alone never marks a tome collected.

@@ -222,6 +222,60 @@ function A:ShowSettings()
     for _,cb in ipairs(UI.settings.checks)do cb:SetChecked(self.char.settings[cb.key])end
     UI.settings.tier.label:SetText("Minimum tier: "..self.char.settings.minimumTier);UI.settings:Show()
 end
+-- Show actual outstanding targets without turning a shared raid into a huge card.
+-- The full list is available in the tooltip and the existing paginated picker.
+function A:SetStopTargetLabel(label,stop)
+    local targets=stop and stop.targets or {}
+    if #targets==0 then label:SetText("");return end
+    local names={};for _,t in ipairs(targets)do names[#names+1]=t.name end
+    local visible=#names
+    repeat
+        local suffix=visible<#names and string.format(" (+%d more)",#names-visible)or""
+        label:SetText("Collect: "..table.concat(names,", ",1,visible)..suffix)
+        if label:GetStringWidth()<=label:GetWidth()then break end
+        if visible==1 then
+            -- Preserve the extra-target count even when the first name is long.
+            -- Remove whole UTF-8 characters, not individual continuation bytes.
+            local name=names[1]
+            repeat
+                local last=#name
+                while last>1 and name:byte(last)>=128 and name:byte(last)<192 do last=last-1 end
+                name=name:sub(1,last-1)
+                label:SetText("Collect: "..name.."..."..suffix)
+            until label:GetStringWidth()<=label:GetWidth()or name==""
+            break
+        end
+        visible=visible-1
+    until false
+end
+function A:ShowStopTooltip(owner,stop)
+    if not stop then return end
+    GameTooltip:SetOwner(owner,"ANCHOR_RIGHT")
+    GameTooltip:AddLine(stop.loc.place,unpack(C.gold))
+    GameTooltip:AddLine("Collect at this stop:",1,1,1)
+    for i,t in ipairs(stop.targets)do
+        if i>10 then GameTooltip:AddLine(string.format("...and %d more. Click the farm card for all targets.",#stop.targets-10),.65,.70,.78,true);break end
+        GameTooltip:AddLine(t.name,unpack(C.green))
+        local loc=stop.targetLocs and stop.targetLocs[t.key]or stop.loc
+        if loc and loc.mobs and #loc.mobs>0 then GameTooltip:AddLine("  "..table.concat(loc.mobs,", "),.65,.70,.78,true)end
+    end
+    GameTooltip:AddLine("Click the farm card: map and farming details",.65,.70,.78,true)
+    GameTooltip:Show()
+end
+function A:OpenStopDetails(stop)
+    if not stop or #stop.targets==0 then return end
+    local function open(t)
+        A:ShowLocation(t,stop.targetLocs and stop.targetLocs[t.key]or stop.loc)
+    end
+    if #stop.targets==1 then open(stop.targets[1]);return end
+    local choices={}
+    for _,t in ipairs(stop.targets)do choices[#choices+1]={title=t.name,key=t.key}end
+    self:Pick("Tomes at this farming stop",choices,function(item)
+        -- Collection may change while the picker is open. Resolve the target
+        -- from the current build so switching/deleting builds cannot misroute.
+        local t=A:TargetByKey(item.key);if t then open(t)end
+    end)
+end
 function A:ResetPositions()
     self.char.position=nil;self.char.arrowPosition=nil;self.char.settings.scale=1
     self.char.settings.width=354;self.char.settings.height=500
@@ -241,19 +295,22 @@ function A:CreateUI()
     track:SetPoint("TOPLEFT",f,"TOPLEFT",13,-109);track:SetPoint("TOPRIGHT",f,"TOPRIGHT",-13,-109);track:SetHeight(3)
     local bg=track:CreateTexture(nil,"BACKGROUND");bg:SetTexture("Interface\\Buttons\\WHITE8X8");bg:SetAllPoints();bg:SetVertexColor(.17,.20,.25,1)
     local body=CreateFrame("Frame",nil,f);UI.body=body;body:SetPoint("TOPLEFT",f,"TOPLEFT",12,-123);body:SetPoint("BOTTOMRIGHT",f,"BOTTOMRIGHT",-12,8)
-    local card=CreateFrame("Button",nil,body);UI.card=card;skin(card,.085,.085,.12,1);card:SetPoint("TOPLEFT",body,"TOPLEFT");card:SetPoint("TOPRIGHT",body,"TOPRIGHT");card:SetHeight(62)
-    card.caption=text(card,"NEXT FARM",9,10,-8,290,C.purple);card.title=text(card,"Import a build to get started",12,10,-23,290);card.info=text(card,"",10,10,-42,290,C.muted)
-    card.title:SetWordWrap(false);card.info:SetWordWrap(false)
-    card:SetScript("OnClick",function()local s=A:ActiveStop()or A.runtime.route[1];if s then A:ShowLocation(s.targets[1],s.loc)end end)
-    UI.start=button(body,"Start route",92,25,function()if A.runtime.running then A:PauseRoute()else A:StartRoute()end end);UI.start:SetPoint("TOPLEFT",body,"TOPLEFT",0,-73)
+    local card=CreateFrame("Button",nil,body);UI.card=card;skin(card,.085,.085,.12,1);card:SetPoint("TOPLEFT",body,"TOPLEFT");card:SetPoint("TOPRIGHT",body,"TOPRIGHT");card:SetHeight(82)
+    card.caption=text(card,"NEXT FARM",9,10,-8,290,C.purple);card.title=text(card,"Import a build to get started",12,10,-23,290);card.info=text(card,"",10,10,-62,290,C.muted)
+    card.targets=text(card,"",11,10,-43,290,C.green)
+    card.title:SetWordWrap(false);card.info:SetWordWrap(false);card.targets:SetWordWrap(false)
+    card:SetScript("OnClick",function()A:OpenStopDetails(A:ActiveStop()or A.runtime.route[1])end)
+    card:SetScript("OnEnter",function(self)A:ShowStopTooltip(self,A:ActiveStop()or A.runtime.route[1])end)
+    card:SetScript("OnLeave",function()GameTooltip:Hide()end)
+    UI.start=button(body,"Start route",92,25,function()if A.runtime.running then A:PauseRoute()else A:StartRoute()end end);UI.start:SetPoint("TOPLEFT",card,"BOTTOMLEFT",0,-11)
     UI.next=button(body,"Skip",58,25,function()A:SkipStop()end);UI.next:SetPoint("LEFT",UI.start,"RIGHT",6,0);tip(UI.next,"Defer this stop","Keeps its tomes on your checklist. Replan restores deferred stops.")
     UI.replan=button(body,"Replan",66,25,function()A:Replan()end);UI.replan:SetPoint("LEFT",UI.next,"RIGHT",6,0)
-    UI.settingsButton=button(body,"Settings",83,25,function()A:ShowSettings()end);UI.settingsButton:SetPoint("TOPRIGHT",body,"TOPRIGHT",0,-73)
-    UI.search=edit(body,206,25,false);UI.search:SetPoint("TOPLEFT",body,"TOPLEFT",0,-108)
+    UI.settingsButton=button(body,"Settings",83,25,function()A:ShowSettings()end);UI.settingsButton:SetPoint("TOPRIGHT",card,"BOTTOMRIGHT",0,-11)
+    UI.search=edit(body,206,25,false);UI.search:SetPoint("TOPLEFT",UI.start,"BOTTOMLEFT",0,-10)
     UI.search:SetScript("OnTextChanged",function(self)A.runtime.search=self:GetText();A.runtime.scroll=0;A:RenderRows()end)
     UI.searchHint=text(UI.search,"Search echoes or zones...",10,8,-7,194,C.muted)
-    UI.filter=button(body,"Needed",105,25,function()A.char.settings.hideDone=not A.char.settings.hideDone;A.runtime.scroll=0;A:Render()end);UI.filter:SetPoint("TOPRIGHT",body,"TOPRIGHT",0,-108)
-    local list=CreateFrame("Frame",nil,body);UI.list=list;list:SetPoint("TOPLEFT",body,"TOPLEFT",0,-146);list:SetPoint("BOTTOMRIGHT",body,"BOTTOMRIGHT",0,27);list:EnableMouseWheel(true)
+    UI.filter=button(body,"Needed",105,25,function()A.char.settings.hideDone=not A.char.settings.hideDone;A.runtime.scroll=0;A:Render()end);UI.filter:SetPoint("TOPRIGHT",UI.settingsButton,"BOTTOMRIGHT",0,-10)
+    local list=CreateFrame("Frame",nil,body);UI.list=list;list:SetPoint("TOPLEFT",UI.search,"BOTTOMLEFT",0,-13);list:SetPoint("BOTTOMRIGHT",body,"BOTTOMRIGHT",0,27);list:EnableMouseWheel(true)
     list:SetScript("OnMouseWheel",function(_,d)A.runtime.scroll=math.max(0,(A.runtime.scroll or 0)-d*2);A:RenderRows()end)
     UI.rows={};UI.scroll=slider(list);UI.scroll:SetPoint("TOPRIGHT",list,"TOPRIGHT",0,-2);UI.scroll:SetPoint("BOTTOMRIGHT",list,"BOTTOMRIGHT",0,2);UI.scroll:SetWidth(9)
     UI.scroll:SetScript("OnValueChanged",function(_,v)if not UI.updating then A.runtime.scroll=math.floor(v+.5);A:RenderRows()end end)
@@ -263,9 +320,13 @@ function A:CreateUI()
     resize:SetNormalTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up");resize:SetScript("OnMouseDown",function()if not A.char.settings.locked and not A.char.settings.collapsed then UI.resizing=true;f:StartSizing("BOTTOMRIGHT")end end)
     resize:SetScript("OnMouseUp",function()f:StopMovingOrSizing();if UI.resizing then A.char.settings.width=f:GetWidth();A.char.settings.height=f:GetHeight()end;UI.resizing=false;A:Render()end)
     f:SetScript("OnSizeChanged",function()if A.db and not UI.sizing then A:LayoutRows()end end)
-    self.arrow=CreateFrame("Frame","EbonTomeFarmArrow",UIParent);local arrow=self.arrow;size(arrow,316,60);skin(arrow,.045,.055,.075,.90);arrow:SetFrameStrata("MEDIUM");movable(arrow,"arrowPosition");position(arrow,"arrowPosition","TOP",0,-135)
+    self.arrow=CreateFrame("Frame","EbonTomeFarmArrow",UIParent);local arrow=self.arrow;size(arrow,316,80);skin(arrow,.045,.055,.075,.90);arrow:SetFrameStrata("MEDIUM");movable(arrow,"arrowPosition");position(arrow,"arrowPosition","TOP",0,-135)
     arrow.icon=arrow:CreateTexture(nil,"OVERLAY");size(arrow.icon,44,44);arrow.icon:SetPoint("LEFT",arrow,"LEFT",8,0);arrow.icon:SetTexture("Interface\\Minimap\\MinimapArrow")
-    arrow.title=text(arrow,"",12,62,-13,244,C.gold);arrow.info=text(arrow,"",10,62,-34,244,C.muted);arrow.title:SetWordWrap(false);arrow.info:SetWordWrap(false);arrow:Hide()
+    arrow.title=text(arrow,"",12,62,-12,244,C.gold)
+    arrow.targets=text(arrow,"",11,62,-33,244,C.green);arrow.info=text(arrow,"",10,62,-55,244,C.muted)
+    arrow.title:SetWordWrap(false);arrow.targets:SetWordWrap(false);arrow.info:SetWordWrap(false)
+    arrow:SetScript("OnEnter",function(self)A:ShowStopTooltip(self,A:ActiveStop())end)
+    arrow:SetScript("OnLeave",function()GameTooltip:Hide()end);arrow:Hide()
     if Minimap then
         local m=CreateFrame("Button","EbonTomeFarmMinimap",Minimap);self.minimap=m;size(m,30,30);m:SetPoint("TOPLEFT",Minimap,"TOPLEFT",0,0);m:SetFrameLevel(Minimap:GetFrameLevel()+6)
         m:SetNormalTexture("Interface\\Icons\\INV_Misc_Book_09");m:RegisterForClicks("LeftButtonUp","RightButtonUp")
@@ -278,8 +339,9 @@ function A:LayoutRows()
     if not UI.list then return end
     local width=self.frame:GetWidth()-24
     UI.build:SetWidth(width-74);UI.build.label:SetWidth(width-94)
-    UI.card.title:SetWidth(width-20);UI.card.info:SetWidth(width-20);UI.search:SetWidth(width-116);UI.searchHint:SetWidth(width-132)
+    UI.card.title:SetWidth(width-20);UI.card.info:SetWidth(width-20);UI.card.targets:SetWidth(width-20);UI.search:SetWidth(width-116);UI.searchHint:SetWidth(width-132)
     UI.progressLabel:SetWidth(width);UI.footer:SetWidth(width-6)
+    self:SetStopTargetLabel(UI.card.targets,self:ActiveStop()or self.runtime.route[1])
     local count=math.max(1,math.floor(UI.list:GetHeight()/44))
     for i=1,count do
         if not UI.rows[i] then
@@ -299,7 +361,10 @@ function A:LayoutRows()
                 local _,status=A:Status(self.target);GameTooltip:AddLine(status,1,1,1,true)
                 GameTooltip:AddLine("Click: map and farming details\nCheckbox: manual collection mark\nRight-click: restore automatic detection",.65,.7,.78,true);GameTooltip:Show()
             end)
-            row:SetScript("OnLeave",function(self)self:SetBackdropBorderColor(.22,.25,.31,1);GameTooltip:Hide()end)
+            row:SetScript("OnLeave",function(self)
+                if self.activeFarm then self:SetBackdropBorderColor(unpack(C.gold))else self:SetBackdropBorderColor(.22,.25,.31,1)end
+                GameTooltip:Hide()
+            end)
         end
         local row=UI.rows[i];row:ClearAllPoints();row:SetPoint("TOPLEFT",UI.list,"TOPLEFT",0,-(i-1)*44);row:SetWidth(width-15)
         row.name:SetWidth(width-92);row.sub:SetWidth(width-56)
@@ -310,6 +375,8 @@ function A:RenderRows()
     if not UI.list then return end
     local b=self:GetBuild();local entries={};local search=U.trim(self.runtime.search or ""):lower()
     shown(UI.searchHint,search=="")
+    local activeKeys={};local active=self:ActiveStop()
+    for _,t in ipairs(active and active.targets or {})do activeKeys[t.key]=true end
     local rank={};for i,s in ipairs(self.runtime.route)do for _,t in ipairs(s.targets)do if not rank[t.key]then rank[t.key]=i end end end
     for _,t in ipairs(b and b.targets or {})do
         local loc=self:BestLocation(t);local hay=(t.name.." "..(loc and loc.place or "").." "..(loc and loc.zone or "")):lower()
@@ -329,9 +396,12 @@ function A:RenderRows()
             local t,loc=entry.t,entry.loc;row.target=t;row.name:SetText(t.name);row.check:SetChecked(self:IsDone(t));row.tier:SetText(t.locked and "LOCK"or t.tier)
             local status,label=self:Status(t)
             row.name:SetTextColor(unpack(self:IsDone(t)and C.green or C.text))
-            row.sub:SetText(self:IsDone(t)and label or loc and((loc.x and ""or "No pin: ")..(loc.zone or loc.place))or "Unmatched echo - click for options")
-            row:SetBackdropBorderColor(.22,.25,.31,1);row:Show()
-        else row.target=nil;row:Hide()end
+            row.activeFarm=activeKeys[t.key]or false
+            local subtitle=self:IsDone(t)and label or loc and((loc.x and ""or "No pin: ")..(loc.zone or loc.place))or "Unmatched echo - click for options"
+            row.sub:SetText((row.activeFarm and "Farm now: "or "")..subtitle)
+            if row.activeFarm then row:SetBackdropBorderColor(unpack(C.gold))else row:SetBackdropBorderColor(.22,.25,.31,1)end
+            row:Show()
+        else row.target=nil;row.activeFarm=false;row:Hide()end
     end
     shown(UI.empty,#entries==0)
     UI.empty:SetText(not b and "Turn your build into a farming checklist.\n\nClick Import above to paste your Hub export.\n\nCollection marks are saved per character."or search~=""and"No matches for this search."or"No outstanding echoes in this view.\n\nSwitch to All to review collected entries,\nor change the minimum tier in Settings.")

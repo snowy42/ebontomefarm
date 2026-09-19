@@ -3,13 +3,14 @@
 Turn a Project Ebonhold echo build into a practical tome-farming checklist and itinerary.
 For the **original 3.3.5a client (Interface 30300, Lua 5.1)**, not Retail WoW.
 
-**Version 1.0.0 is an installable first build. Automated tests pass; live Ebonhold
-validation has not yet been performed.** The initial GitHub release is marked
-as a prerelease pending that validation.
+**Version 1.0.1 names the tomes to collect in both the guide and farm card.**
+Matthew has confirmed the initial 1.0.0 UI/import/route display working in
+Ebonhold. This update passes automated tests; full live-client acceptance
+is still pending, so releases remain marked prerelease.
 
 ## Install
 
-Download `EbonTomeFarm-1.0.0.zip` from [Releases](https://github.com/snowy42/ebontomefarm/releases).
+Download `EbonTomeFarm-1.0.1.zip` from [Releases](https://github.com/snowy42/ebontomefarm/releases).
 Close the game, extract it into your client's `Interface\AddOns` directory,
 and restart. The result must be:
 
@@ -36,6 +37,12 @@ No Python, external application, or online data download is needed in game.
    coordinate confidence and community notes. Stay at the camp until its
    wanted tomes are collected. **Skip** defers a stop; **Replan** restores
    deferred stops. Neither arrival nor Skip marks an echo as collected.
+
+The guide and farm card display **Collect: <echo names>**. Long shared-stop
+lists show **(+N more)**; hover either display for names and mob descriptions.
+Click the farm card to open one tome or choose from all targets at a shared
+stop. Current-farm checklist rows have a gold border and **Farm now** label.
+Names update as tomes are obtained and remain visible on arrival.
 
 Drag the tracker or direction card to move it. Resize the tracker from its
 lower-right corner, collapse it from the header, or hide/show it with `/etf`
@@ -97,7 +104,7 @@ python3 -m unittest discover -s tests -p 'test_*.py' -v
 python3 tools/package.py
 ```
 
-There are **40 Lua addon/mock tests and 8 Python distribution/parser tests**.
+There are **48 Lua addon/mock tests and 8 Python distribution/parser tests**.
 The deterministic packager validates TOC order, required files, licences and
 version consistency, then produces a correctly rooted ZIP, per-file manifest
 and SHA-256 checksums. Every normal main push runs CI and preserves exact

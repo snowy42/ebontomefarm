@@ -2,7 +2,7 @@
 
 ## Automated coverage
 
-`lua5.1 tests/test.lua` runs 40 tests in the real Lua 5.1 interpreter against a
+`lua5.1 tests/test.lua` runs 48 tests in the real Lua 5.1 interpreter against a
 restricted original-client API mock. It loads every addon module in TOC order.
 The mock intentionally lacks modern convenience APIs such as SetSize/SetShown.
 
@@ -22,10 +22,21 @@ CI also compiles every Lua file with luac5.1. The data builder was run against
 pinned source files and reproduced Data.lua exactly. These checks do **not**
 constitute execution inside the actual game client.
 
+## 1.0.1 target-label regressions
+
+Eight additional tests cover named single/shared farms, fitting long names
+with an explicit remainder count, complete hover lists, per-target source
+selection, collection refresh, names during arrival/map/instance states,
+active-row highlighting, and non-overlapping layouts at supported sizes.
+A render of the actual mock frame geometry was also visually inspected with
+substitute fonts/icons. It is not an in-game capture.
+
 ## Required live validation
 
-The initial release is marked prerelease until this is performed. No live
-Ebonhold client/server was available during development.
+Releases remain prereleases until this is performed. Matthew supplied an
+in-game screenshot of 1.0.0 displaying an imported build and farming route.
+That confirms initial loading/display, not every integration or source.
+The 1.0.1 target-label update has not yet been verified in the actual client.
 
 1. Enable `/console scriptErrors 1`. Install alongside ProjectEbonhold, first
    without optional Hub/TomTom. Log in and open `/etf`. Check readable fonts,
