@@ -1,17 +1,22 @@
-"""Download public map and Lua reference files, without executing fetched code."""
-from pathlib import Path
+"""Retrieve public navigation data for compatibility research; do not execute it."""
+from pathlib import Path, PurePosixPath
 from urllib.request import Request, urlopen
-import hashlib
+import hashlib, io, zipfile
 out = Path('navigation-cache')
 out.mkdir(exist_ok=True)
-urls = {name + '.webp': 'https://worldofechoes.pages.dev/assets/maps/' + name + '.webp' for name in ('eastern-kingdoms', 'kalimdor', 'outland', 'northrend')}
-urls['lua-5.1.5.tar.gz'] = 'https://www.lua.org/ftp/lua-5.1.5.tar.gz'
-for name, url in urls.items():
-    try:
-        with urlopen(Request(url, headers={'User-Agent': 'EbonTomeFarm/1.0 research'}), timeout=40) as r:
-            data = r.read(16000001)
-        if len(data) > 16000000: raise ValueError('File exceeds 16 MB cap')
-        (out / name).write_bytes(data)
-        print(name, len(data), hashlib.sha256(data).hexdigest(), flush=True)
-    except Exception as error:
-        print(name, str(error), flush=True)
+def fetch(url, cap=120000000):
+    with urlopen(Request(url, headers={'User-Agent': 'EbonTomeFarm/1.0 research'}), timeout=70) as r:
+        data = r.read(cap + 1)
+    if len(data) > cap: raise ValueError('Reference exceeds size cap')
+    print(url, len(data), hashlib.sha256(data).hexdigest(), flush=True)
+    return data
+url = 'https://codeload.github.com/Xurkon/PE-Questie/zip/refs/heads/main'
+with zipfile.ZipFile(io.BytesIO(fetch(url))) as archive:
+    for item in archive.infolist():
+        p = PurePosixPath(item.filename)
+        if p.is_absolute() or '..' in p.parts or item.file_size > 18000000: continue
+        if p.suffix.lower() in ('.lua','.toc','.json','.md','.txt') or p.name.lower().startswith(('license','copying')):
+            target = out / item.filename
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(archive.read(item))
+print('Extracted text references only')
