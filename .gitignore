@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+data-source/
+navigation-cache/
+research-cache/
+developer-kit/
+dist/
+*.log
+.DS_Store
