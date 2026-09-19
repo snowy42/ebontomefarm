@@ -1,0 +1,19 @@
+## Interface: 30300
+## Title: |cffd6b36aEbonTomeFarm|r
+## Notes: Turn EbonholdHub echo builds into a tome-farming checklist and route.
+## Author: Matthew Snow
+## Version: 1.0.0
+## SavedVariables: EbonTomeFarmDB
+## SavedVariablesPerCharacter: EbonTomeFarmCharDB
+## OptionalDeps: ProjectEbonhold, EbonholdHub, TomTom
+## X-Website: https://github.com/snowy42/ebontomefarm
+
+Core.lua
+Data.lua
+Codec.lua
+Import.lua
+Collection.lua
+Route.lua
+Navigation.lua
+UI.lua
+Events.lua
