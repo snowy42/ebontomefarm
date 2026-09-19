@@ -31,11 +31,30 @@ function A:Distance(a,b)
     local x,y,i=self:WorldPoint(a.mapID,a.x,a.y);local xx,yy,ii=self:WorldPoint(b.mapID,b.x,b.y)
     if x and xx and i==ii then return math.sqrt((x-xx)^2+(y-yy)^2) end
 end
-local function groupKey(loc)
+function A:SourceGroup(loc)
     if loc.instanceArea then return "instance:"..loc.instanceArea end
     if loc.accuracy=="custom" then return loc.id end
-    -- Bucket only nearby pins on the same map; never confuse a raid entrance with exterior farming.
-    return tostring(loc.mapID)..":"..loc.kind..":"..math.floor(loc.x*50)..":"..math.floor(loc.y*50)
+    if not self.sourceGroups then
+        -- Build against the complete static dataset so groups do not change as tomes are collected.
+        self.sourceGroups={};local rows,camps={},{}
+        for _,l in ipairs(self.Data.locations)do
+            if l.mapID and l.x and l.y and not l.instanceArea then rows[#rows+1]=l end
+        end
+        table.sort(rows,function(a,b)return a.id<b.id end)
+        for _,l in ipairs(rows)do
+            local chosen
+            for _,camp in ipairs(camps)do
+                if l.mapID==camp.loc.mapID and l.kind==camp.loc.kind then
+                    local distance=self:Distance(l,camp.loc)
+                    local sameName=U.key(l.place)==U.key(camp.loc.place)
+                    if distance and distance<=(sameName and 180 or 90)then chosen=camp;break end
+                end
+            end
+            if not chosen then chosen={id="camp:"..l.id,loc=l};camps[#camps+1]=chosen end
+            self.sourceGroups[l.id]=chosen.id
+        end
+    end
+    return self.sourceGroups[loc.id] or "source:"..loc.id
 end
 function A:RouteCandidates()
     local candidates,byid={},{}
@@ -44,7 +63,7 @@ function A:RouteCandidates()
         if self:Eligible(t) and not self:IsDone(t) then
             for _,loc in ipairs(self:TargetLocations(t)) do
                 if self:LocationUsable(loc) then
-                    local id=groupKey(loc)
+                    local id=self:SourceGroup(loc)
                     local s=byid[id]
                     if not s then s={id=id,loc=loc,targets={},targetLocs={},mapID=loc.mapID,x=loc.x,y=loc.y,c=loc.c};byid[id]=s;candidates[#candidates+1]=s end
                     if not s.targetLocs[t.key] then s.targets[#s.targets+1]=t;s.targetLocs[t.key]=loc end
@@ -134,7 +153,7 @@ function A:Replan()
 end
 function A:NavigateLocation(t,loc)
     if not self:LocationUsable(loc) then self:ShowLocation(t,loc);return end
-    local _,byid=self:RouteCandidates();local s=byid[groupKey(loc)]
+    local _,byid=self:RouteCandidates();local s=byid[self:SourceGroup(loc)]
     if not s then
         -- Completed/filtered targets may still be inspected, but do not contaminate the farm itinerary.
         self:ShowLocation(t,loc);self:Print("This location is not an outstanding enabled farm stop.");return
