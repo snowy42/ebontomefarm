@@ -1,0 +1,22 @@
+name: Upstream compatibility research
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'tools/research_fetch.py'
+      - '.github/workflows/research.yml'
+permissions:
+  contents: read
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch public reference data without executing upstream code
+        run: python3 tools/research_fetch.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: upstream-research
+          path: research-cache/
+          retention-days: 3
