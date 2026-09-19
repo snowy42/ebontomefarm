@@ -1,0 +1,28 @@
+{
+  "sourceSHA256": "702311152861685f26871d78236bc6e6369ada54b031e79c49c4f6397320625b",
+  "conflicts": [
+    {
+      "id": "import-dc3f5e4a-f7df-f8df-f9df3b6c",
+      "message": "Source lists Ulduar; native NPC data places Instructor Razuvious in a different instance. Pin follows the NPC instance; the tome drop still needs in-game confirmation.",
+      "from": 4273,
+      "to": 3456
+    },
+    {
+      "id": "echo-import-tome-stitched-fury",
+      "message": "Source lists Ulduar; native NPC data places Patchwerk in a different instance. Pin follows the NPC instance; the tome drop still needs in-game confirmation.",
+      "from": 4273,
+      "to": 3456
+    }
+  ],
+  "unmapped": [],
+  "counts": {
+    "npc": 60,
+    "unmapped": 49,
+    "entrance": 49,
+    "zone": 8,
+    "landmark": 7
+  },
+  "tomes": 128,
+  "locations": 173,
+  "tomesWithPins": 96
+}
