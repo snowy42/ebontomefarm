@@ -1,4 +1,4 @@
--- EbonTomeFarm: original implementation, GPL-3.0-or-later.
+-- EbonTomeFarm: original implementation, MIT.
 -- All mutable collection state is character-scoped. Imported builds are account-scoped.
 EbonTomeFarm = { VERSION = "1.0.0", SCHEMA = 1 }
 local A = EbonTomeFarm
@@ -44,6 +44,8 @@ function A:InitStorage()
         minimumTier = "C", minimap = true }
     for k,v in pairs(defaults) do if self.char.settings[k] == nil then self.char.settings[k] = v end end
     self.char.settings.scale = U.clamp(tonumber(self.char.settings.scale) or 1, .7, 1.6)
+    self.char.settings.width = U.clamp(tonumber(self.char.settings.width) or 354,344,600)
+    self.char.settings.height = U.clamp(tonumber(self.char.settings.height) or 500,418,900)
     self.runtime.manual = self.char.manual
 end
 function A:GetBuild()
@@ -55,16 +57,19 @@ function A:SaveBuild(build)
     local b = U.copy(build); b.id = self.db.nextID; self.db.nextID = self.db.nextID+1
     self.db.builds[#self.db.builds+1] = b; self.char.activeBuild = b.id
     self.runtime.skipped = {}; self.runtime.active = nil; self.runtime.selected = nil
+    self.runtime.running = false; if self.ClearWaypoint then self:ClearWaypoint() end
     self:Refresh(); return b
 end
 function A:SelectBuild(id)
     self.char.activeBuild = id; self.runtime.skipped = {}; self.runtime.active = nil
-    self.runtime.selected = nil; self:Refresh()
+    self.runtime.selected = nil; self.runtime.running = false
+    if self.ClearWaypoint then self:ClearWaypoint() end; self:Refresh()
 end
 function A:DeleteBuild(id)
     for i,b in ipairs(self.db.builds) do if b.id == id then table.remove(self.db.builds,i); break end end
     if self.char.activeBuild == id then self.char.activeBuild = self.db.builds[1] and self.db.builds[1].id end
-    self.runtime.active = nil; self:Refresh()
+    self.runtime.active = nil; self.runtime.running = false
+    if self.ClearWaypoint then self:ClearWaypoint() end; self:Refresh()
 end
 function A:Status(target)
     local key = target.key
