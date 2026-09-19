@@ -1,0 +1,21 @@
+name: Navigation compatibility research
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'tools/navigation_fetch.py'
+      - '.github/workflows/navigation-research.yml'
+permissions:
+  contents: read
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 tools/navigation_fetch.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: navigation-references
+          path: navigation-cache/
+          retention-days: 3
