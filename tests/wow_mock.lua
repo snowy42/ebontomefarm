@@ -153,7 +153,7 @@ function GetCurrentMapContinent()local z=EbonTomeFarm.Data.zones[M.map];return z
 function GetCurrentMapZone()for i,z in ipairs(zones(GetCurrentMapContinent()))do if z.id==M.map then return i end end;return 0 end
 function GetCurrentMapDungeonLevel()return M.level end
 function SetDungeonMapLevel(l)M.level=l end
-function SetMapByID(mid)M.map=mid;M.level=0;M.mapSwitches=M.mapSwitches+1 end
+function SetMapByID(mid)M.lastSetMapID=mid;M.map=mid+1;M.level=0;M.mapSwitches=M.mapSwitches+1 end
 function SetMapToCurrentZone()M.map=M.player.mapID;M.mapSwitches=M.mapSwitches+1 end
 function GetPlayerMapPosition()if M.map==M.player.mapID then return M.player.x,M.player.y end;return 0,0 end
 function GetPlayerFacing()return M.facing end

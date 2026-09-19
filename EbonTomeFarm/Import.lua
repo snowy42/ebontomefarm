@@ -112,14 +112,14 @@ local function collect(data)
     end
     if #out==0 then return nil,"No wanted echoes found. F-tier / pool entries are not farming targets." end
     local title=type(data.title)=="string" and U.clean(data.title) or "Imported build"
-    return {title=U.trim(title):sub(1,100),class=data.class,targets=out,sourceTargets=U.copy(out),warnings=warnings,format="EbonholdHub"}
+    title=U.trim(title);if title=="" then title="Imported build" end
+    return {title=title:sub(1,100),class=data.class,targets=out,sourceTargets=U.copy(out),warnings=warnings,format="EbonholdHub"}
 end
 function A:ParseImport(text)
     text=U.trim(text)
     if #text>524288 then return nil,"Import exceeds 512 KiB." end
     if text=="" then return nil,"Paste a Hub export, EBH1/EWL1 loadout, or one echo name per line." end
     if text:match("^https?://") then return nil,"Paste the build's Export code, not its page URL. WoW addons cannot fetch websites." end
-    local version=text:match("^(E[WB][LH]%d+):") -- accepted versions are checked explicitly below
     if text:match("^EBH%d+:") or text:match("^EWL%d+:") then
         local out,title,class={},nil,nil
         if text:match("^EBH1:") then
@@ -149,16 +149,20 @@ function A:ParseImport(text)
     local payload=text
     if text:sub(1,1)~="{" and text:sub(1,1)~="[" then
         local decoded,err=A.Codec.Base64Decode(text)
-        if decoded then payload=decoded
+        -- Plain names can be syntactically valid Base64. Only a JSON payload
+        -- selects the export reader; otherwise keep the name-list fallback.
+        local decodedJSON=decoded and U.trim(decoded)
+        if decodedJSON and (decodedJSON:sub(1,1)=="{" or decodedJSON:sub(1,1)=="[") then payload=decodedJSON
         elseif text:find("\n",1,true) or self.tomesByKey[U.key(text)] then
             local out={};for line in text:gmatch("[^\r\n]+") do
                 line=U.trim(line:gsub("^%s*[%-%*]%s+",""));if line~="" then
                     if #out>=512 then return nil,"Name list exceeds 512 entries." end
+                    if #line>200 then return nil,"An echo name exceeds 200 characters." end
                     out[#out+1]={name=line,tier="B"} end
             end
             if #out>512 then return nil,"Name list exceeds 512 entries." end
             return {title="Tome wishlist",targets=out,sourceTargets=U.copy(out),format="Names"}
-        else return nil,err end
+        else return nil,err or "Expected a Base64-encoded JSON build or one echo name per line." end
     end
     local data,err=A.Codec.JSONDecode(payload)
     if not data then return nil,"Cannot read export: "..tostring(err) end

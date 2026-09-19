@@ -64,7 +64,9 @@ function A:ShowLocation(target,loc)
     if WorldMapFrame then
         if ShowUIPanel then ShowUIPanel(WorldMapFrame) else WorldMapFrame:Show() end
     end
-    if SetMapByID then SetMapByID(loc.mapID)
+    -- Original 3.3.5 GetCurrentMapAreaID returns the DBC ID plus one.
+    -- SetMapByID takes the DBC ID itself; Questie also applies this offset.
+    if SetMapByID then SetMapByID(loc.mapID-1)
     elseif self.mapCZ and self.mapCZ[loc.mapID] then
         local cz=self.mapCZ[loc.mapID];SetMapZoom(cz.c,cz.z)
     end

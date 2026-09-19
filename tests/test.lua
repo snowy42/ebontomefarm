@@ -186,4 +186,28 @@ test("inside-instance navigation suppresses outdoor direction",function()
     reset();assert(A:Import("Adaptive Power\nArcane Cadence"));A.char.settings.show=true;A:StartRoute();M.inside=true
     A:SamplePosition();A:UpdateNavigation();eq(A.arrow.icon:IsShown(),false);assert(A.arrow.info:GetText():find("Inside instance",1,true));M.inside=false
 end)
+test("every known single echo name bypasses false Base64 detection",function()
+    reset()
+    for _,t in ipairs(A.Data.tomes)do
+        local b,err=A:ParseImport(t.name);assert(b,t.name..": "..tostring(err))
+        eq(#b.targets,1);eq(b.targets[1].name,t.name)
+    end
+end)
+test("wrapped Base64 remains valid and names have bounded lengths",function()
+    local code=A.Codec.Base64Encode('{"title":"  ","echoTiers":{"Arcane Hazard|3":"S"}}')
+    code=code:gsub("(........)","%1\n")
+    local b=assert(A:ParseImport(code));eq(b.title,"Imported build");eq(#b.targets,1)
+    local names=assert(A:ParseImport("Arcane Hazard\nArmor Mastery"));eq(#names.targets,2)
+    eq(A:ParseImport(string.rep("X",201).."\nAdaptive Power"),nil)
+end)
+test("native map setter receives DBC ID, getter returns ID plus one",function()
+    reset();local b=assert(A:Import("Adaptive Power"));local t=b.targets[1];local loc=A:BestLocation(t)
+    A:ShowLocation(t,loc);eq(M.lastSetMapID,loc.mapID-1);eq(GetCurrentMapAreaID(),loc.mapID)
+    for _,source in ipairs(A.Data.locations)do
+        if source.mapID then
+            A:ShowLocation(A:ResolveTarget({name=A.tomesByID[source.tomeID].name}),source)
+            eq(M.lastSetMapID,source.mapID-1);eq(GetCurrentMapAreaID(),source.mapID)
+        end
+    end
+end)
 print(string.format("\n%d tests passed under %s",passed,_VERSION))
