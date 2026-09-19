@@ -1,0 +1,43 @@
+name: Apply tested target-label checkpoint
+on:
+  push:
+    branches: [main]
+    paths: ['tools/target-labels.patch']
+permissions:
+  contents: write
+jobs:
+  checkpoint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Verify and apply the locally tested patch
+        run: |
+          echo '0e440417a4a721a06163611313f3d445d0b51f98935c564f0ef90f9100079712  tools/target-labels.patch' | sha256sum -c -
+          git apply --check tools/target-labels.patch
+          git apply tools/target-labels.patch
+      - name: Compile, run all 56 tests, and package
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y lua5.1
+          find EbonTomeFarm tests -name '*.lua' -print0 | xargs -0 -n1 luac5.1 -p
+          lua5.1 tests/test.lua
+          python3 -m unittest discover -s tests -p 'test_*.py' -v
+          python3 tools/package.py
+          (cd dist && sha256sum -c SHA256SUMS.txt)
+      - name: Persist tested source and remove one-time patch files
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -u
+          git rm tools/target-labels.patch .github/workflows/target-label-checkpoint.yml
+          git commit -m 'v1.0.1: name farming targets in guide, highlight current rows, add eight regressions'
+          git pull --rebase origin main
+          git push origin HEAD:main
+      - uses: actions/upload-artifact@v4
+        with:
+          name: EbonTomeFarm-tested-target-labels
+          path: dist/*
+          retention-days: 30
