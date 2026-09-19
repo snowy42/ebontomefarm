@@ -3,6 +3,7 @@ local A,U=EbonTomeFarm,EbonTomeFarm.util
 local rank={Locked=5,S=4,A=3,B=2,C=1,F=0,pool=0}
 A.TierRank=rank
 function A:LoadData()
+    self.sourceGroups=nil
     self.tomesByID,self.tomesByKey,self.locationsByID={},{},{}
     for _,t in ipairs(self.Data.tomes) do self.tomesByID[t.id]=t;self.tomesByKey[U.key(t.name)]=t;t.locations={} end
     for _,loc in ipairs(self.Data.locations) do
@@ -128,6 +129,7 @@ function A:ParseImport(text)
                 token=U.trim(token);local id,tier,stack=token:match("^(%d+)%.(%d+)%.(%d+)$")
                 id,tier,stack=tonumber(id),tonumber(tier),tonumber(stack)
                 if not id or id<1 or id>10000000 or not tier or tier<1 or tier>4 or not stack or stack<1 or stack>1000 then return nil,"Malformed EBH1 entry: "..token:sub(1,60) end
+                if #out>=512 then return nil,"Loadout exceeds 512 entries." end
                 out[#out+1]={spellID=id,tier=({[1]="B",[2]="A",[3]="S",[4]="S"})[tier]}
             end
         elseif text:match("^EWL1:") then
@@ -137,6 +139,7 @@ function A:ParseImport(text)
             for token in (entries..","):gmatch("(.-),") do
                 token=U.trim(token);local id,flag=token:match("^(%d+):(%d+)$");id,flag=tonumber(id),tonumber(flag)
                 if not id or id<1 or id>10000000 or (flag~=0 and flag~=1) then return nil,"Malformed EWL1 entry: "..token:sub(1,60) end
+                if #out>=512 then return nil,"Loadout exceeds 512 entries." end
                 out[#out+1]={spellID=id,tier=flag==1 and "Locked" or "B",locked=flag==1 or nil}
             end
         else return nil,"Unsupported journal format version. Export as Hub Base64/JSON instead." end
@@ -149,7 +152,9 @@ function A:ParseImport(text)
         if decoded then payload=decoded
         elseif text:find("\n",1,true) or self.tomesByKey[U.key(text)] then
             local out={};for line in text:gmatch("[^\r\n]+") do
-                line=U.trim(line:gsub("^%s*[%-%*]%s+",""));if line~="" then out[#out+1]={name=line,tier="B"} end
+                line=U.trim(line:gsub("^%s*[%-%*]%s+",""));if line~="" then
+                    if #out>=512 then return nil,"Name list exceeds 512 entries." end
+                    out[#out+1]={name=line,tier="B"} end
             end
             if #out>512 then return nil,"Name list exceeds 512 entries." end
             return {title="Tome wishlist",targets=out,sourceTargets=U.copy(out),format="Names"}
